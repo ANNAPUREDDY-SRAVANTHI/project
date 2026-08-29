@@ -56,20 +56,46 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - name: Run Dummy Load Test
-        run: echo "Running JMeter or k6 load tests..." && sleep 10
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      - name: Install dependencies
+        working-directory: ./load-tests
+        run: npm install
+      - name: Run Load Tests
+        working-directory: ./load-tests
+        run: node generate-report.js
+      - name: Upload Load Test Reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: load-test-reports
+          path: load-tests/Load_Test_Report.xlsx
 
-  dast-security-tests:
-    name: DAST Security Tests
+  appium-e2e-tests:
+    name: Appium E2E Tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - name: Run Dummy DAST Test
-        run: echo "Running OWASP ZAP security tests..." && sleep 15
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      - name: Install dependencies
+        working-directory: ./appium-tests
+        run: npm install
+      - name: Run Appium Tests
+        working-directory: ./appium-tests
+        run: node generate-report.js
+      - name: Upload Appium Test Reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: appium-test-reports
+          path: appium-tests/Appium_Test_Report.xlsx
 
   build-and-bundle:
     name: Build Web App & Bundle Reports
-    needs: [selenium-web-tests, appium-mobile-tests, load-tests, dast-security-tests]
+    needs: [selenium-web-tests, appium-mobile-tests, load-tests, appium-e2e-tests]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
