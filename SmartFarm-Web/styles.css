@@ -1,4 +1,4 @@
-﻿/* ============================================================
+/* ============================================================
    SmartFarm Web — Global Styles
    Theme: Agricultural Green (#2E7D32, #1B5E20, #F1F8E9)
    ============================================================ */
@@ -402,7 +402,192 @@ html, body {
 .mb-16 { margin-bottom: 16px; }
 .flex-between { display: flex; justify-content: space-between; align-items: center; }
 .flex-center { display: flex; justify-content: center; align-items: center; }
-.flex-col { display: flex; flex-direction: column; }
-.gap-8 { gap: 8px; }
-.text-center { text-align: center; }
 .w-full { width: 100%; }
+
+/* ============================================================
+   Laptop & Desktop Web Responsive Layout
+   ============================================================ */
+@media (min-width: 768px) {
+  :root {
+    --max-w: 1200px;
+    --card-radius: 20px;
+  }
+
+  body {
+    background: #eef4ee;
+  }
+
+  #app {
+    max-width: var(--max-w);
+    margin: 0 auto;
+    background: #ffffff;
+    box-shadow: 0 0 50px rgba(0, 0, 0, 0.06);
+    border-left: 1px solid #e2ebe2;
+    border-right: 1px solid #e2ebe2;
+  }
+
+  .top-bar {
+    padding: 16px 36px;
+    background: #ffffff;
+    border-bottom: 1px solid #eef2ee;
+  }
+
+  .top-bar-title {
+    font-size: 22px;
+  }
+
+  .content {
+    padding: 28px 36px;
+  }
+
+  .content.with-bottom-nav {
+    padding-bottom: 96px;
+  }
+
+  .card-row {
+    gap: 20px;
+  }
+
+  .stat-card {
+    padding: 24px;
+    border-radius: 18px;
+  }
+
+  .stat-card .stat-value {
+    font-size: 32px;
+  }
+
+  .stat-card .stat-label {
+    font-size: 14px;
+  }
+
+  .login-card {
+    max-width: 450px;
+    margin: 0 auto;
+    padding: 40px;
+    border-radius: 24px;
+    box-shadow: 0 16px 40px rgba(46, 125, 50, 0.1);
+  }
+
+  .bottom-nav {
+    max-width: var(--max-w);
+    border-top: 1px solid #eef2ee;
+    border-radius: 18px 18px 0 0;
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.05);
+    padding: 6px 0;
+  }
+
+  .nav-item {
+    padding: 10px 8px;
+  }
+
+  .nav-item svg {
+    width: 24px;
+    height: 24px;
+  }
+
+  .nav-item span {
+    font-size: 12px;
+  }
+
+  .fab {
+    right: max(36px, calc(50vw - 564px));
+    width: 60px;
+    height: 60px;
+    font-size: 32px;
+  }
+
+  .action-card {
+    padding: 20px 24px;
+  }
+
+  .action-title {
+    font-size: 16px;
+  }
+
+  .action-desc {
+    font-size: 13px;
+  }
+
+  .worker-item {
+    padding: 20px 24px;
+  }
+
+  .finance-header-card {
+    padding: 32px;
+  }
+
+  .modal {
+    max-width: 480px;
+  }
+
+  .report-card {
+    padding: 28px;
+  }
+}
+
+
+
+/* ============================================================
+   Multilingual AI Voice Assistant Styles
+   ============================================================ */
+.va-floating-btn {
+  position: fixed;
+  bottom: 90px;
+  left: max(16px, calc(50vw - 224px));
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #1B5E20, #2E7D32);
+  color: #fff;
+  border: none;
+  box-shadow: 0 4px 16px rgba(27, 94, 32, 0.4);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 99;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.va-floating-btn:hover {
+  transform: scale(1.08);
+  box-shadow: 0 6px 20px rgba(27, 94, 32, 0.5);
+}
+.va-btn-pulse {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  border: 2px solid #81c784;
+  animation: vaPulseRing 2s infinite;
+  pointer-events: none;
+}
+@keyframes vaPulseRing {
+  0% { transform: scale(0.95); opacity: 0.8; }
+  50% { transform: scale(1.25); opacity: 0; }
+  100% { transform: scale(0.95); opacity: 0; }
+}
+
+.va-mic-circle {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: var(--green-primary);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 16px rgba(46, 125, 50, 0.35);
+  transition: all 0.2s ease;
+}
+.va-mic-circle.listening {
+  background: #d32f2f;
+  animation: vaListeningPulse 1.2s infinite alternate;
+  box-shadow: 0 0 24px rgba(211, 47, 47, 0.6);
+}
+@keyframes vaListeningPulse {
+  0% { transform: scale(1); }
+  100% { transform: scale(1.12); }
+}

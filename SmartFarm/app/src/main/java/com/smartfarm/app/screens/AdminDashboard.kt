@@ -3,6 +3,7 @@ package com.smartfarm.app.screens
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -25,6 +26,8 @@ import com.smartfarm.app.viewmodel.WorkerViewModel
 @Composable
 fun AdminDashboard(navController: NavController, viewModel: WorkerViewModel) {
     val context = LocalContext.current
+    var showVoiceAssistant by remember { mutableStateOf(false) }
+
     LaunchedEffect(Unit) {
         viewModel.statusMessage.collect { message ->
             Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
@@ -43,11 +46,24 @@ fun AdminDashboard(navController: NavController, viewModel: WorkerViewModel) {
             TopAppBar(
                 title = { Text("Smart Farm Admin", fontWeight = FontWeight.Bold, color = Color(0xFF1B5E20)) },
                 actions = {
+                    IconButton(onClick = { showVoiceAssistant = true }) {
+                        Icon(Icons.Default.Mic, "AI Voice Assistant", tint = Color(0xFF2E7D32))
+                    }
                     IconButton(onClick = { navController.navigate("login") { popUpTo(0) { inclusive = true } } }) {
                         Icon(Icons.AutoMirrored.Filled.Logout, "Logout", tint = Color(0xFFD32F2F))
                     }
                 }
             )
+        },
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = { showVoiceAssistant = true },
+                containerColor = Color(0xFF2E7D32),
+                contentColor = Color.White,
+                shape = CircleShape
+            ) {
+                Icon(Icons.Default.Mic, "AI Voice Assistant")
+            }
         },
         containerColor = Color(0xFFF1F8E9)
     ) { padding ->
@@ -70,6 +86,10 @@ fun AdminDashboard(navController: NavController, viewModel: WorkerViewModel) {
                 AdminActionRow("Reports", "Check farm analytics", Icons.Default.BarChart) { navController.navigate("reports") }
             }
         }
+    }
+
+    if (showVoiceAssistant) {
+        VoiceAssistantDialog(viewModel = viewModel, onDismiss = { showVoiceAssistant = false })
     }
 }
 

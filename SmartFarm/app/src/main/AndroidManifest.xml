@@ -4,6 +4,8 @@
 
     <!-- Allows the app to connect to the internet and your local server -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Audio recording for Multilingual AI Voice Assistant -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <application
         android:allowBackup="true"

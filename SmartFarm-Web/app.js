@@ -1,4 +1,4 @@
-﻿// ============================================================
+// ============================================================
 //  SmartFarm Web — App Core (Router + State Store)
 //  Mirrors: WorkerViewModel.kt + AppNavigation.kt
 // ============================================================
@@ -126,6 +126,14 @@ async function renderRoute() {
   screen.className = 'screen';
   app.appendChild(screen);
   await handler(screen, param);
+
+  // Multilingual Voice Assistant floating trigger on logged-in dashboard screens
+  if (window.VoiceAssistant && API.isLoggedIn() && base !== '/splash' && base !== '/login' && base !== '/register' && base !== '/forgot-password') {
+    VoiceAssistant.renderFloatingButton();
+  } else {
+    const existing = document.getElementById('vaFloatingBtn');
+    if (existing) existing.remove();
+  }
 }
 
 window.addEventListener('hashchange', renderRoute);
@@ -138,4 +146,3 @@ function todayISO() { return new Date().toISOString().split('T')[0]; }
 function todayDisplay() {
   return new Date().toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' });
 }
-

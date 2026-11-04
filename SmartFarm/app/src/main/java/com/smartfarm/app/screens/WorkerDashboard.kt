@@ -26,6 +26,8 @@ import com.smartfarm.app.viewmodel.WorkerViewModel
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WorkerDashboard(navController: NavController, viewModel: WorkerViewModel) {
+    var showVoiceAssistant by remember { mutableStateOf(false) }
+
     // 1. Observe data from ViewModel
     val workers by viewModel.allWorkers.collectAsState()
     val todayMap by viewModel.todayAttendance.collectAsState()
@@ -62,6 +64,10 @@ fun WorkerDashboard(navController: NavController, viewModel: WorkerViewModel) {
                     }
                 },
                 actions = {
+                    // --- VOICE ASSISTANT BUTTON ---
+                    IconButton(onClick = { showVoiceAssistant = true }) {
+                        Icon(Icons.Default.Mic, "AI Voice Assistant", tint = Color(0xFF2E7D32))
+                    }
                     // --- NOTIFICATION BELL ---
                     IconButton(onClick = { navController.navigate("notifications") }) {
                         BadgedBox(badge = {
@@ -176,6 +182,10 @@ fun WorkerDashboard(navController: NavController, viewModel: WorkerViewModel) {
                 icon = Icons.AutoMirrored.Filled.Assignment
             )
         }
+    }
+
+    if (showVoiceAssistant) {
+        VoiceAssistantDialog(viewModel = viewModel, onDismiss = { showVoiceAssistant = false })
     }
 }
 
