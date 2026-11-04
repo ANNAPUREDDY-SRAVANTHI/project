@@ -6,7 +6,7 @@
   <meta name="description" content="SmartFarm - Farm Worker Management Portal. Manage workers, attendance, wages and tasks."/>
   <title>Smart Farm | Farm Management Portal</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌾</text></svg>"/>
-  <link rel="stylesheet" href="styles.css?v=3"/>
+  <link rel="stylesheet" href="styles.css?v=10"/>
 </head>
 <body>
   <div id="app">
@@ -17,21 +17,24 @@
   </div>
 
   <!-- Core -->
-  <script src="api.js?v=6"></script>
-  <script src="app.js?v=8"></script>
-  <script src="voiceAssistant.js?v=2"></script>
+  <script src="api.js?v=10"></script>
+  <script src="voiceAssistant.js?v=10"></script>
+  <script src="app.js?v=10"></script>
 
   <!-- Screens -->
-  <script src="screens/auth.js?v=7"></script>
-  <script src="screens/admin.js?v=6"></script>
-  <script src="screens/attendance.js?v=4"></script>
-  <script src="screens/finance.js?v=4"></script>
-  <script src="screens/worker.js?v=4"></script>
+  <script src="screens/auth.js?v=10"></script>
+  <script src="screens/admin.js?v=10"></script>
+  <script src="screens/attendance.js?v=10"></script>
+  <script src="screens/finance.js?v=10"></script>
+  <script src="screens/worker.js?v=10"></script>
 
   <script>
     // Boot the app
     window.addEventListener('DOMContentLoaded', () => {
       renderRoute();
+      setTimeout(() => {
+        if (window.VoiceAssistant) window.VoiceAssistant.renderFloatingButton();
+      }, 300);
     });
   </script>
 </body>

@@ -468,15 +468,16 @@ const VoiceAssistant = (() => {
     if (existing) existing.remove();
   }
 
-  // Inject Floating Mic Button on Logged-in screens
+  // Inject Floating Mic Button on screens
   function renderFloatingButton() {
     if (document.getElementById('vaFloatingBtn')) return;
     const btn = document.createElement('button');
     btn.id = 'vaFloatingBtn';
     btn.className = 'va-floating-btn';
     btn.setAttribute('title', 'AI Voice Assistant (తెలుగు / Hindi / English)');
+    btn.setAttribute('aria-label', 'AI Voice Assistant');
     btn.innerHTML = `
-      <svg viewBox="0 0 24 24" fill="currentColor" style="width:26px;height:26px">
+      <svg viewBox="0 0 24 24" fill="currentColor" style="width:28px;height:28px">
         <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5-3c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
       </svg>
       <span class="va-btn-pulse"></span>`;
@@ -484,6 +485,29 @@ const VoiceAssistant = (() => {
     document.body.appendChild(btn);
   }
 
-  return { init, openModal, closeModal, renderFloatingButton, parseIntent, executeAction };
+  const exported = { init, openModal, closeModal, renderFloatingButton, parseIntent, executeAction };
+  window.VoiceAssistant = exported;
+  return exported;
 })();
+
+window.VoiceAssistant = VoiceAssistant;
+
+// Auto-mount listener on route changes and document load
+window.addEventListener('hashchange', () => {
+  setTimeout(() => {
+    const route = window.location.hash.replace('#', '') || '/splash';
+    if (route !== '/splash' && window.VoiceAssistant) {
+      window.VoiceAssistant.renderFloatingButton();
+    }
+  }, 100);
+});
+
+window.addEventListener('DOMContentLoaded', () => {
+  setTimeout(() => {
+    const route = window.location.hash.replace('#', '') || '/splash';
+    if (route !== '/splash' && window.VoiceAssistant) {
+      window.VoiceAssistant.renderFloatingButton();
+    }
+  }, 200);
+});
 

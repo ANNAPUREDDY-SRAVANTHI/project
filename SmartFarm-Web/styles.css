@@ -533,25 +533,30 @@ html, body {
    ============================================================ */
 .va-floating-btn {
   position: fixed;
-  bottom: 90px;
-  left: max(16px, calc(50vw - 224px));
-  width: 56px;
-  height: 56px;
+  bottom: 24px;
+  right: 24px;
+  width: 58px;
+  height: 58px;
   border-radius: 50%;
   background: linear-gradient(135deg, #1B5E20, #2E7D32);
   color: #fff;
   border: none;
-  box-shadow: 0 4px 16px rgba(27, 94, 32, 0.4);
+  box-shadow: 0 4px 20px rgba(27, 94, 32, 0.45);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 99;
+  z-index: 99999;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 .va-floating-btn:hover {
   transform: scale(1.08);
-  box-shadow: 0 6px 20px rgba(27, 94, 32, 0.5);
+  box-shadow: 0 6px 24px rgba(27, 94, 32, 0.55);
+}
+@media (max-width: 600px) {
+  .with-bottom-nav ~ .va-floating-btn {
+    bottom: 84px;
+  }
 }
 .va-btn-pulse {
   position: absolute;

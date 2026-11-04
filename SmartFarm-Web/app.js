@@ -128,9 +128,10 @@ async function renderRoute() {
   await handler(screen, param);
 
   // Multilingual Voice Assistant floating trigger accessible across all screens
-  if (window.VoiceAssistant && base !== '/splash') {
-    VoiceAssistant.renderFloatingButton();
-  } else {
+  const va = window.VoiceAssistant || (typeof VoiceAssistant !== 'undefined' ? VoiceAssistant : null);
+  if (va && base !== '/splash') {
+    va.renderFloatingButton();
+  } else if (base === '/splash') {
     const existing = document.getElementById('vaFloatingBtn');
     if (existing) existing.remove();
   }
