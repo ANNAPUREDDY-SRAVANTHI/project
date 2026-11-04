@@ -20,9 +20,12 @@ const VoiceAssistant = (() => {
   const PHONETIC_MAP = {
     'కుమార్': 'kumar', 'कुमार': 'kumar',
     'మీనా': 'meena', 'मीना': 'meena',
+    'రమేష్': 'ramesh', 'రమేశ్': 'ramesh', 'रमेश': 'ramesh',
+    'రాజు': 'raju', 'राजू': 'raju',
+    'సునీత': 'sunita', 'सुनीता': 'sunita',
+    'లీల': 'leela', 'लीला': 'leela',
     'కుసుమ': 'kusuma', 'कुसुमा': 'kusuma',
     'మాబుని': 'mabuni', 'माबुनी': 'mabuni',
-    'లీల': 'leela', 'लीला': 'leela',
     'సబీనా': 'sabina', 'सबीना': 'sabina',
     'లత': 'latha', 'लता': 'latha',
     'కృష్ణ': 'krishna', 'క్రిష్ణ': 'krishna', 'कृष्णा': 'krishna',
@@ -114,10 +117,26 @@ const VoiceAssistant = (() => {
     }
   }
 
+  // Demo workers used when backend is offline (STATE.workers is empty)
+  const DEMO_WORKERS = [
+    { id: 'demo-1', name: 'Ramesh',  role: 'General Labor',  daily_wage: 300, _isDemo: true },
+    { id: 'demo-2', name: 'Kumar',   role: 'Irrigation',     daily_wage: 350, _isDemo: true },
+    { id: 'demo-3', name: 'Meena',   role: 'Weeding',        daily_wage: 280, _isDemo: true },
+    { id: 'demo-4', name: 'Leela',   role: 'Harvesting',     daily_wage: 320, _isDemo: true },
+    { id: 'demo-5', name: 'Raju',    role: 'Spraying',       daily_wage: 310, _isDemo: true },
+    { id: 'demo-6', name: 'Sunita',  role: 'Planting',       daily_wage: 290, _isDemo: true }
+  ];
+
+  function getWorkerList() {
+    const live = (window.STATE && Array.isArray(STATE.workers) && STATE.workers.length > 0)
+      ? STATE.workers : null;
+    return live || DEMO_WORKERS;
+  }
+
   // Find worker in STATE.workers by spoken name
   function findWorker(spokenText) {
     const textLower = spokenText.toLowerCase();
-    const workers = (window.STATE && Array.isArray(STATE.workers)) ? STATE.workers : [];
+    const workers = getWorkerList();
     
     // Check direct English matches
     for (const w of workers) {
@@ -232,16 +251,23 @@ const VoiceAssistant = (() => {
     ];
     const isBalance = balanceKeywords.some(k => text.includes(k) || transcript.includes(k));
     if (isBalance) {
-      const targetWorker = worker || (STATE.workers.length > 0 ? STATE.workers[0] : null);
+      const allWorkers = getWorkerList();
+      const targetWorker = worker || (allWorkers.length > 0 ? allWorkers[0] : null);
       if (targetWorker) {
-        const due = STATE.getBalanceDue(targetWorker.id);
-        const earned = STATE.getTotalEarned(targetWorker.id);
-        const paid = STATE.getTotalPaid(targetWorker.id);
+        // Demo mode: STATE methods may not exist for demo workers
+        const isDemo = targetWorker._isDemo || !(window.STATE && STATE.getBalanceDue);
+        const due    = isDemo ? 0 : STATE.getBalanceDue(targetWorker.id);
+        const earned = isDemo ? 0 : STATE.getTotalEarned(targetWorker.id);
+        const paid   = isDemo ? 0 : STATE.getTotalPaid(targetWorker.id);
+        const descText = isDemo
+          ? `${targetWorker.name} — Demo Mode (start server for live data)`
+          : `${targetWorker.name}'s balance due is ₹${Math.round(due)} (Earned: ₹${Math.round(earned)}, Paid: ₹${Math.round(paid)})`;
         return {
           type: 'BALANCE',
           worker: targetWorker,
           due, earned, paid,
-          description: `${targetWorker.name}'s balance due is ₹${Math.round(due)} (Earned: ₹${Math.round(earned)}, Paid: ₹${Math.round(paid)})`
+          isDemo,
+          description: descText
         };
       }
     }
@@ -308,34 +334,61 @@ const VoiceAssistant = (() => {
     }
 
     if (action.type === 'ATTENDANCE') {
-      const today = todayISO();
-      await API.submitAttendance({ worker: action.worker.id, date: today, status: action.status });
-      await refreshAll();
-      showToast(`Attendance Marked: ${action.worker.name} (${action.status}) ✅`);
-      const feedback = currentLang === 'te-IN' 
-        ? `${action.worker.name} కి హాజరు ${action.status === 'Present' ? 'ప్రెసెంట్' : 'ఆబ్సెంట్'} గా నమోదు చేయబడింది.`
-        : (currentLang === 'hi-IN' ? `${action.worker.name} की हाजिरी दर्ज हो गई है.` : `Marked ${action.worker.name} as ${action.status}.`);
-      speak(feedback);
+      const isDemo = action.worker._isDemo;
+      if (isDemo) {
+        const statusLabel = action.status === 'Present' ? '✅ Present' : '❌ Absent';
+        showToast(`[Demo] ${action.worker.name} marked ${statusLabel} — start server to save`);
+        const feedback = currentLang === 'te-IN'
+          ? `డెమో మోడ్: ${action.worker.name} ${action.status === 'Present' ? 'ప్రెసెంట్' : 'ఆబ్సెంట్'} గా గుర్తించబడింది.`
+          : (currentLang === 'hi-IN' ? `डेमो मोड: ${action.worker.name} को ${action.status === 'Present' ? 'उपस्थित' : 'अनुपस्थित'} दर्ज किया गया.` : `Demo: ${action.worker.name} marked as ${action.status}.`);
+        speak(feedback);
+      } else {
+        const today = todayISO();
+        await API.submitAttendance({ worker: action.worker.id, date: today, status: action.status });
+        await refreshAll();
+        showToast(`Attendance Marked: ${action.worker.name} (${action.status}) ✅`);
+        const feedback = currentLang === 'te-IN'
+          ? `${action.worker.name} కి హాజరు ${action.status === 'Present' ? 'ప్రెసెంట్' : 'ఆబ్సెంట్'} గా నమోదు చేయబడింది.`
+          : (currentLang === 'hi-IN' ? `${action.worker.name} की हाजिरी दर्ज हो गई है.` : `Marked ${action.worker.name} as ${action.status}.`);
+        speak(feedback);
+      }
     } else if (action.type === 'PAYMENT') {
-      await API.addPayment({ worker: action.worker.id, amount: action.amount, description: 'Voice Payment' });
-      await refreshAll();
-      showToast(`Payment of ₹${action.amount} recorded for ${action.worker.name}! 💰`);
-      const feedback = currentLang === 'te-IN'
-        ? `${action.worker.name} కి ${action.amount} రూపాయల చెల్లింపు నమోదు చేయబడింది.`
-        : (currentLang === 'hi-IN' ? `${action.worker.name} को ${action.amount} रुपये का भुगतान दर्ज हुआ.` : `Recorded payment of ₹${action.amount} for ${action.worker.name}.`);
-      speak(feedback);
+      const isDemo = action.worker._isDemo;
+      if (isDemo) {
+        showToast(`[Demo] ₹${action.amount} payment for ${action.worker.name} — start server to save`);
+        const feedback = currentLang === 'te-IN'
+          ? `డెమో మోడ్: ${action.worker.name} కి ${action.amount} రూపాయల చెల్లింపు గుర్తించబడింది.`
+          : (currentLang === 'hi-IN' ? `डेमो मोड: ${action.worker.name} को ${action.amount} रुपये दर्ज किया गया.` : `Demo: ₹${action.amount} payment for ${action.worker.name} recognized.`);
+        speak(feedback);
+      } else {
+        await API.addPayment({ worker: action.worker.id, amount: action.amount, description: 'Voice Payment' });
+        await refreshAll();
+        showToast(`Payment of ₹${action.amount} recorded for ${action.worker.name}! 💰`);
+        const feedback = currentLang === 'te-IN'
+          ? `${action.worker.name} కి ${action.amount} రూపాయల చెల్లింపు నమోదు చేయబడింది.`
+          : (currentLang === 'hi-IN' ? `${action.worker.name} को ${action.amount} रुपये का भुगतान दर्ज हुआ.` : `Recorded payment of ₹${action.amount} for ${action.worker.name}.`);
+        speak(feedback);
+      }
     } else if (action.type === 'TASK') {
-      await API.addTask({ worker: action.worker.id, description: action.taskDesc });
-      await refreshAll();
-      showToast(`Task assigned to ${action.worker.name}! 📋`);
-      const feedback = currentLang === 'te-IN'
-        ? `${action.worker.name} కి పని కేటాయించబడింది.`
-        : (currentLang === 'hi-IN' ? `${action.worker.name} को काम दिया गया.` : `Task assigned to ${action.worker.name}.`);
-      speak(feedback);
+      const isDemo = action.worker._isDemo;
+      if (isDemo) {
+        showToast(`[Demo] Task assigned to ${action.worker.name} — start server to save`);
+        speak(currentLang === 'te-IN' ? `డెమో మోడ్: ${action.worker.name} కి పని గుర్తించబడింది.` : `Demo: Task for ${action.worker.name} recognized.`);
+      } else {
+        await API.addTask({ worker: action.worker.id, description: action.taskDesc });
+        await refreshAll();
+        showToast(`Task assigned to ${action.worker.name}! 📋`);
+        const feedback = currentLang === 'te-IN'
+          ? `${action.worker.name} కి పని కేటాయించబడింది.`
+          : (currentLang === 'hi-IN' ? `${action.worker.name} को काम दिया गया.` : `Task assigned to ${action.worker.name}.`);
+        speak(feedback);
+      }
     } else if (action.type === 'BALANCE') {
-      const feedback = currentLang === 'te-IN'
-        ? `${action.worker.name} బ్యాలెన్స్ బాకీ ${Math.round(action.due)} రూపాయలు.`
-        : (currentLang === 'hi-IN' ? `${action.worker.name} का बाकी बैलेंस ${Math.round(action.due)} रुपये है.` : `${action.worker.name}'s balance due is ₹${Math.round(action.due)}.`);
+      const feedback = action.isDemo
+        ? (currentLang === 'te-IN' ? `సర్వర్ నడపకుండా బ్యాలెన్స్ డేటా అందుబాటులో లేదు.` : `Balance data needs the server to be running.`)
+        : (currentLang === 'te-IN'
+          ? `${action.worker.name} బ్యాలెన్స్ బాకీ ${Math.round(action.due)} రూపాయలు.`
+          : (currentLang === 'hi-IN' ? `${action.worker.name} का बाकी बैलेंस ${Math.round(action.due)} रुपये है.` : `${action.worker.name}'s balance due is ₹${Math.round(action.due)}.`));
       speak(feedback);
     } else if (action.type === 'NAVIGATE') {
       navigate(action.path);
@@ -360,11 +413,12 @@ const VoiceAssistant = (() => {
             ⚠️ <span>Command not recognized.</span>
           </div>
           <div style="font-size:12px;color:var(--gray-text);margin-top:4px">
-            Try saying: <b>"Mark Ramesh present"</b> or <b>"కుమార్ కి 500 పేమెంట్"</b>
+            Try: <b>"Mark Ramesh present"</b>, <b>"Pay 500 to Kumar"</b> or <b>"Meena absent"</b>
           </div>`;
         if (executeBtn) executeBtn.style.display = 'none';
         speak(currentLang === 'te-IN' ? "కమాండ్ అర్థం కాలేదు, దయచేసి మళ్ళీ చెప్పండి." : "Could not understand command. Please try again.");
       } else {
+        const isDemo = action.worker && action.worker._isDemo;
         const badgeColor = action.type === 'ATTENDANCE' ? 'var(--blue)' : (action.type === 'PAYMENT' ? 'var(--green-primary)' : 'var(--orange)');
         resultCardEl.innerHTML = `
           <div style="font-size:11px;font-weight:700;color:${badgeColor};text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">
@@ -372,7 +426,8 @@ const VoiceAssistant = (() => {
           </div>
           <div style="font-size:15px;font-weight:700;color:var(--green-dark)">
             ${action.description}
-          </div>`;
+          </div>
+          ${isDemo ? `<div style="font-size:11px;color:#e65100;margin-top:4px">⚠️ Demo mode — start Django server to save real data</div>` : ''}`;
         if (executeBtn) {
           executeBtn.style.display = 'block';
           executeBtn.onclick = async () => {
