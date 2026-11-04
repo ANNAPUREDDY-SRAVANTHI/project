@@ -30,8 +30,6 @@ const VoiceAssistant = (() => {
     'రామ్మోహన్': 'rammohan', 'రామ్ మోహన్': 'rammohan', 'राममोहन': 'rammohan'
   };
 
-  let silenceTimer = null;
-
   function init() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
@@ -39,17 +37,21 @@ const VoiceAssistant = (() => {
       return false;
     }
     recognition = new SpeechRecognition();
-    recognition.continuous = true;
+    recognition.continuous = false;
     recognition.interimResults = true;
     recognition.maxAlternatives = 1;
 
-    recognition.onaudiostart = () => {
+    recognition.onstart = () => {
       setListeningState(true);
       updateModalStatus("🎙️ Listening... Speak now!");
     };
 
     recognition.onspeechstart = () => {
       updateModalStatus("🗣️ Hearing your voice...");
+    };
+
+    recognition.onspeechend = () => {
+      updateModalStatus("⏳ Processing speech...");
     };
 
     recognition.onresult = (event) => {
@@ -64,42 +66,30 @@ const VoiceAssistant = (() => {
         }
       }
 
-      const currentText = (finalTranscript || interim).trim();
+      const text = (finalTranscript || interim).trim();
       const transcriptEl = document.getElementById('vaTranscript');
-      if (transcriptEl && currentText) {
-        transcriptEl.textContent = `"${currentText}"`;
+      if (transcriptEl && text) {
+        transcriptEl.textContent = `"${text}"`;
         transcriptEl.style.color = '#1B5E20';
       }
 
       if (finalTranscript.trim()) {
-        clearTimeout(silenceTimer);
-        silenceTimer = setTimeout(() => {
-          handleSpeechResult(finalTranscript.trim());
-          if (recognition) {
-            try { recognition.stop(); } catch(e){}
-          }
-          setListeningState(false);
-        }, 700);
-      } else if (interim.trim()) {
-        clearTimeout(silenceTimer);
-        silenceTimer = setTimeout(() => {
-          handleSpeechResult(interim.trim());
-          if (recognition) {
-            try { recognition.stop(); } catch(e){}
-          }
-          setListeningState(false);
-        }, 1800);
+        handleSpeechResult(finalTranscript.trim());
       }
     };
 
     recognition.onerror = (event) => {
       console.warn("Speech Recognition Error:", event.error);
       if (event.error === 'no-speech') {
-        updateModalStatus("👂 No speech detected. Tap mic and speak again.");
+        updateModalStatus("👂 No speech heard. Tap the mic to speak.");
       } else if (event.error === 'not-allowed') {
-        updateModalStatus("🔒 Mic access blocked! Click 🔒 in address bar to Allow.");
+        updateModalStatus("🔒 Mic is blocked. In Chrome, click 🔒 icon in address bar to Allow.");
+      } else if (event.error === 'audio-capture') {
+        updateModalStatus("⚠️ No microphone hardware found.");
+      } else if (event.error === 'network') {
+        updateModalStatus("⚠️ Network error contacting Google speech service.");
       } else {
-        updateModalStatus(`ℹ️ ${event.error}. Tap mic to try again.`);
+        updateModalStatus(`ℹ️ Tap mic to speak (${event.error})`);
       }
       setListeningState(false);
     };
@@ -422,7 +412,7 @@ const VoiceAssistant = (() => {
     if (statusText) statusText.textContent = msg;
   }
 
-  async function toggleListening() {
+  function toggleListening() {
     if (!recognition && !init()) {
       alert("Speech recognition is not supported in this browser. Please use Google Chrome or Edge.");
       return;
@@ -436,18 +426,6 @@ const VoiceAssistant = (() => {
       return;
     }
 
-    // Explicitly prompt for mic permission if needed
-    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        stream.getTracks().forEach(t => t.stop());
-      } catch (err) {
-        console.warn("Microphone access prompt error:", err);
-        updateModalStatus("🔒 Click the 🔒 lock icon in browser address bar to Allow Microphone.");
-        return;
-      }
-    }
-
     try {
       recognition.lang = currentLang;
       recognition.start();
@@ -457,14 +435,25 @@ const VoiceAssistant = (() => {
         transcriptEl.textContent = 'Listening... Speak now!';
         transcriptEl.style.color = '#2E7D32';
       }
+      updateModalStatus("🎙️ Listening... Speak now!");
       const resultCardEl = document.getElementById('vaResultCard');
       if (resultCardEl) resultCardEl.innerHTML = `<div style="font-size:11px;color:var(--gray-text)">💡 ${LANG_CONFIG[currentLang].hint}</div>`;
       const executeBtn = document.getElementById('vaExecuteBtn');
       if (executeBtn) executeBtn.style.display = 'none';
     } catch (err) {
       console.warn("Recognition start catch:", err);
-      try { recognition.stop(); } catch(e){}
-      setListeningState(false);
+      if (err.name === 'InvalidStateError') {
+        try { recognition.stop(); } catch(e){}
+        setTimeout(() => {
+          try {
+            recognition.lang = currentLang;
+            recognition.start();
+            setListeningState(true);
+          } catch(e){}
+        }, 150);
+      } else {
+        setListeningState(false);
+      }
     }
   }
 
@@ -566,8 +555,8 @@ const VoiceAssistant = (() => {
       };
     });
 
-    // Automatically trigger mic listening on user's open gesture
-    toggleListening();
+    // Ready to listen on tap
+    setListeningState(false);
   }
 
   function closeModal() {
