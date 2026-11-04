@@ -30,6 +30,8 @@ const VoiceAssistant = (() => {
     'రామ్మోహన్': 'rammohan', 'రామ్ మోహన్': 'rammohan', 'राममोहन': 'rammohan'
   };
 
+  let silenceTimer = null;
+
   function init() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
@@ -37,19 +39,69 @@ const VoiceAssistant = (() => {
       return false;
     }
     recognition = new SpeechRecognition();
-    recognition.continuous = false;
-    recognition.interimResults = false;
+    recognition.continuous = true;
+    recognition.interimResults = true;
     recognition.maxAlternatives = 1;
 
+    recognition.onaudiostart = () => {
+      setListeningState(true);
+      updateModalStatus("🎙️ Listening... Speak now!");
+    };
+
+    recognition.onspeechstart = () => {
+      updateModalStatus("🗣️ Hearing your voice...");
+    };
+
     recognition.onresult = (event) => {
-      const transcript = event.results[0][0].transcript.trim();
-      handleSpeechResult(transcript);
+      let interim = '';
+      let finalTranscript = '';
+
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        if (event.results[i].isFinal) {
+          finalTranscript += event.results[i][0].transcript;
+        } else {
+          interim += event.results[i][0].transcript;
+        }
+      }
+
+      const currentText = (finalTranscript || interim).trim();
+      const transcriptEl = document.getElementById('vaTranscript');
+      if (transcriptEl && currentText) {
+        transcriptEl.textContent = `"${currentText}"`;
+        transcriptEl.style.color = '#1B5E20';
+      }
+
+      if (finalTranscript.trim()) {
+        clearTimeout(silenceTimer);
+        silenceTimer = setTimeout(() => {
+          handleSpeechResult(finalTranscript.trim());
+          if (recognition) {
+            try { recognition.stop(); } catch(e){}
+          }
+          setListeningState(false);
+        }, 700);
+      } else if (interim.trim()) {
+        clearTimeout(silenceTimer);
+        silenceTimer = setTimeout(() => {
+          handleSpeechResult(interim.trim());
+          if (recognition) {
+            try { recognition.stop(); } catch(e){}
+          }
+          setListeningState(false);
+        }, 1800);
+      }
     };
 
     recognition.onerror = (event) => {
-      console.error("Speech Recognition Error:", event.error);
+      console.warn("Speech Recognition Error:", event.error);
+      if (event.error === 'no-speech') {
+        updateModalStatus("👂 No speech detected. Tap mic and speak again.");
+      } else if (event.error === 'not-allowed') {
+        updateModalStatus("🔒 Mic access blocked! Click 🔒 in address bar to Allow.");
+      } else {
+        updateModalStatus(`ℹ️ ${event.error}. Tap mic to try again.`);
+      }
       setListeningState(false);
-      updateModalStatus(`❌ Error: ${event.error === 'not-allowed' ? 'Microphone permission denied.' : 'Could not hear clearly. Try again.'}`);
     };
 
     recognition.onend = () => {
@@ -370,28 +422,49 @@ const VoiceAssistant = (() => {
     if (statusText) statusText.textContent = msg;
   }
 
-  function toggleListening() {
+  async function toggleListening() {
     if (!recognition && !init()) {
       alert("Speech recognition is not supported in this browser. Please use Google Chrome or Edge.");
       return;
     }
+
     if (isListening) {
-      recognition.stop();
-      setListeningState(false);
-    } else {
-      try {
-        recognition.lang = currentLang;
-        recognition.start();
-        setListeningState(true);
-        const transcriptEl = document.getElementById('vaTranscript');
-        if (transcriptEl) transcriptEl.textContent = 'Listening...';
-        const resultCardEl = document.getElementById('vaResultCard');
-        if (resultCardEl) resultCardEl.innerHTML = '';
-        const executeBtn = document.getElementById('vaExecuteBtn');
-        if (executeBtn) executeBtn.style.display = 'none';
-      } catch (err) {
-        console.error("Recognition start error:", err);
+      if (recognition) {
+        try { recognition.stop(); } catch(e){}
       }
+      setListeningState(false);
+      return;
+    }
+
+    // Explicitly prompt for mic permission if needed
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach(t => t.stop());
+      } catch (err) {
+        console.warn("Microphone access prompt error:", err);
+        updateModalStatus("🔒 Click the 🔒 lock icon in browser address bar to Allow Microphone.");
+        return;
+      }
+    }
+
+    try {
+      recognition.lang = currentLang;
+      recognition.start();
+      setListeningState(true);
+      const transcriptEl = document.getElementById('vaTranscript');
+      if (transcriptEl) {
+        transcriptEl.textContent = 'Listening... Speak now!';
+        transcriptEl.style.color = '#2E7D32';
+      }
+      const resultCardEl = document.getElementById('vaResultCard');
+      if (resultCardEl) resultCardEl.innerHTML = `<div style="font-size:11px;color:var(--gray-text)">💡 ${LANG_CONFIG[currentLang].hint}</div>`;
+      const executeBtn = document.getElementById('vaExecuteBtn');
+      if (executeBtn) executeBtn.style.display = 'none';
+    } catch (err) {
+      console.warn("Recognition start catch:", err);
+      try { recognition.stop(); } catch(e){}
+      setListeningState(false);
     }
   }
 
@@ -402,13 +475,13 @@ const VoiceAssistant = (() => {
     overlay.className = 'modal-overlay';
     overlay.id = 'voiceAssistantModal';
     overlay.innerHTML = `
-      <div class="modal" style="max-width:380px;text-align:center;padding:24px 20px;">
+      <div class="modal" style="max-width:390px;text-align:center;padding:24px 20px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
           <div style="display:flex;align-items:center;gap:8px;">
             <span style="font-size:22px">🎙️</span>
             <div style="font-weight:800;font-size:17px;color:var(--green-dark)">AI Voice Assistant</div>
           </div>
-          <button id="vaCloseBtn" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--gray-text)">&times;</button>
+          <button id="vaCloseBtn" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--gray-text)">&times;</button>
         </div>
 
         <!-- Language Switcher -->
@@ -422,7 +495,7 @@ const VoiceAssistant = (() => {
 
         <!-- Animated Mic Button -->
         <div style="position:relative;margin:16px auto 12px;width:80px;height:80px;display:flex;align-items:center;justify-content:center;">
-          <button id="vaMicBtn" class="va-mic-circle">
+          <button id="vaMicBtn" class="va-mic-circle" title="Click to Speak / Stop">
             <svg viewBox="0 0 24 24" fill="currentColor" style="width:36px;height:36px">
               <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5-3c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
             </svg>
@@ -430,22 +503,28 @@ const VoiceAssistant = (() => {
         </div>
 
         <div id="vaStatusText" style="font-size:13px;font-weight:600;color:var(--green-primary);margin-bottom:12px;">
-          Tap microphone to speak
+          Tap microphone above to speak
         </div>
 
         <!-- Live Transcript Display -->
-        <div id="vaTranscript" style="min-height:36px;padding:10px 14px;background:#f5f8f5;border-radius:12px;font-size:14px;font-style:italic;color:#333;margin-bottom:12px;border:1px dashed #c8e6c9;display:flex;align-items:center;justify-content:center;">
-          "Speak a command..."
+        <div id="vaTranscript" style="min-height:42px;padding:10px 14px;background:#f5f8f5;border-radius:12px;font-size:14px;font-style:italic;color:#333;margin-bottom:12px;border:1.5px dashed #c8e6c9;display:flex;align-items:center;justify-content:center;word-break:break-word;">
+          "Tap mic and speak a command..."
         </div>
 
         <!-- Result Action Preview -->
-        <div id="vaResultCard" style="min-height:50px;padding:10px;background:#ffffff;border-radius:12px;border:1px solid #e0e0e0;margin-bottom:14px;text-align:left;">
+        <div id="vaResultCard" style="min-height:50px;padding:10px;background:#ffffff;border-radius:12px;border:1px solid #e0e0e0;margin-bottom:12px;text-align:left;">
           <div style="font-size:11px;color:var(--gray-text)">💡 ${LANG_CONFIG[currentLang].hint}</div>
         </div>
 
-        <button id="vaExecuteBtn" class="btn btn-primary" style="display:none;width:100%;margin-bottom:8px;">
+        <button id="vaExecuteBtn" class="btn btn-primary" style="display:none;width:100%;margin-bottom:12px;">
           Confirm Action
         </button>
+
+        <!-- Fallback Manual Input (Type or Speak) -->
+        <div style="border-top:1px solid #edf2ed;padding-top:10px;display:flex;gap:6px;align-items:center;">
+          <input id="vaManualInput" type="text" placeholder="Or type voice command here..." style="flex:1;padding:8px 12px;border:1px solid #c8e6c9;border-radius:10px;font-size:12px;outline:none;background:#fafdfa;"/>
+          <button id="vaManualSubmitBtn" class="btn btn-primary" style="padding:8px 14px;border-radius:10px;font-size:12px;white-space:nowrap;">Go</button>
+        </div>
       </div>`;
 
     document.body.appendChild(overlay);
@@ -455,6 +534,20 @@ const VoiceAssistant = (() => {
     overlay.onclick = (e) => { if (e.target === overlay) closeModal(); };
 
     overlay.querySelector('#vaMicBtn').onclick = toggleListening;
+
+    // Manual input submit
+    const manualInp = overlay.querySelector('#vaManualInput');
+    const manualBtn = overlay.querySelector('#vaManualSubmitBtn');
+    const runManual = () => {
+      const val = manualInp.value.trim();
+      if (val) {
+        const transcriptEl = document.getElementById('vaTranscript');
+        if (transcriptEl) transcriptEl.textContent = `"${val}"`;
+        handleSpeechResult(val);
+      }
+    };
+    manualBtn.onclick = runManual;
+    manualInp.onkeydown = (e) => { if (e.key === 'Enter') runManual(); };
 
     overlay.querySelectorAll('.va-lang-btn').forEach(btn => {
       btn.onclick = () => {
@@ -473,8 +566,8 @@ const VoiceAssistant = (() => {
       };
     });
 
-    // Auto-start listening on open
-    setTimeout(toggleListening, 300);
+    // Automatically trigger mic listening on user's open gesture
+    toggleListening();
   }
 
   function closeModal() {
