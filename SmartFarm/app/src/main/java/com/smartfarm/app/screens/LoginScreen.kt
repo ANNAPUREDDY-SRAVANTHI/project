@@ -282,11 +282,15 @@ fun LoginScreen(navController: NavController, viewModel: WorkerViewModel) {
                     scope.launch {
                         isLoading = true
                         try {
-                            val res = RetrofitClient.instance.login(com.smartfarm.app.api.LoginRequest(user, pass))
-                            if (res.isSuccessful && res.body()?.token != null) {
-                                val token = res.body()!!.token
+                            val res = RetrofitClient.instance.login(mapOf("username" to user, "password" to pass))
+                            if (res.isSuccessful) {
+                                val body = res.body()
+                                val token = body?.get("token")
+                                    ?: body?.get("auth_token")
+                                    ?: body?.get("key")
+                                    ?: body?.get("access")
+                                    ?: ""
                                 tokenManager.saveToken(token)
-                                tokenManager.saveRole("Admin")
                                 viewModel.setLoggedInUser(user)
                                 viewModel.refreshAll()
                                 navController.navigate("adminDashboard") {
