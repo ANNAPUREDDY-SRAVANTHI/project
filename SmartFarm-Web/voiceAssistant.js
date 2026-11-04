@@ -336,17 +336,29 @@ const VoiceAssistant = (() => {
     if (action.type === 'ATTENDANCE') {
       const isDemo = action.worker._isDemo;
       if (isDemo) {
+        // Save to STATE in-memory so dashboard updates visually
+        const today = todayISO();
+        STATE.attendance.push({ id: Date.now(), worker: action.worker.id, date: today, status: action.status });
         const statusLabel = action.status === 'Present' ? '✅ Present' : '❌ Absent';
-        showToast(`[Demo] ${action.worker.name} marked ${statusLabel} — start server to save`);
+        showToast(`${action.worker.name} marked ${statusLabel} (Demo — start server for permanent save)`);
         const feedback = currentLang === 'te-IN'
-          ? `డెమో మోడ్: ${action.worker.name} ${action.status === 'Present' ? 'ప్రెసెంట్' : 'ఆబ్సెంట్'} గా గుర్తించబడింది.`
-          : (currentLang === 'hi-IN' ? `डेमो मोड: ${action.worker.name} को ${action.status === 'Present' ? 'उपस्थित' : 'अनुपस्थित'} दर्ज किया गया.` : `Demo: ${action.worker.name} marked as ${action.status}.`);
+          ? `${action.worker.name} ${action.status === 'Present' ? 'ప్రెసెంట్' : 'ఆబ్సెంట్'} గా గుర్తించబడింది.`
+          : (currentLang === 'hi-IN' ? `${action.worker.name} को ${action.status === 'Present' ? 'उपस्थित' : 'अनुपस्थित'} दर्ज किया गया.` : `${action.worker.name} marked as ${action.status}.`);
         speak(feedback);
       } else {
-        const today = todayISO();
-        await API.submitAttendance({ worker: action.worker.id, date: today, status: action.status });
-        await refreshAll();
-        showToast(`Attendance Marked: ${action.worker.name} (${action.status}) ✅`);
+        try {
+          const today = todayISO();
+          const ok = await API.submitAttendance({ worker: action.worker.id, date: today, status: action.status });
+          if (ok) {
+            await refreshAll();
+            showToast(`Attendance Marked: ${action.worker.name} (${action.status}) ✅`);
+          } else {
+            showToast(`⚠️ Server error saving attendance. Is Django running?`);
+          }
+        } catch (e) {
+          showToast(`❌ Cannot reach server at 127.0.0.1:8000. Start Django backend!`);
+          console.error('Attendance save error:', e);
+        }
         const feedback = currentLang === 'te-IN'
           ? `${action.worker.name} కి హాజరు ${action.status === 'Present' ? 'ప్రెసెంట్' : 'ఆబ్సెంట్'} గా నమోదు చేయబడింది.`
           : (currentLang === 'hi-IN' ? `${action.worker.name} की हाजिरी दर्ज हो गई है.` : `Marked ${action.worker.name} as ${action.status}.`);
@@ -355,15 +367,25 @@ const VoiceAssistant = (() => {
     } else if (action.type === 'PAYMENT') {
       const isDemo = action.worker._isDemo;
       if (isDemo) {
-        showToast(`[Demo] ₹${action.amount} payment for ${action.worker.name} — start server to save`);
+        STATE.payments.push({ id: Date.now(), worker: action.worker.id, amount: action.amount, date: todayISO(), description: 'Voice Payment (Demo)' });
+        showToast(`₹${action.amount} payment for ${action.worker.name} recorded (Demo)`);
         const feedback = currentLang === 'te-IN'
-          ? `డెమో మోడ్: ${action.worker.name} కి ${action.amount} రూపాయల చెల్లింపు గుర్తించబడింది.`
-          : (currentLang === 'hi-IN' ? `डेमो मोड: ${action.worker.name} को ${action.amount} रुपये दर्ज किया गया.` : `Demo: ₹${action.amount} payment for ${action.worker.name} recognized.`);
+          ? `${action.worker.name} కి ${action.amount} రూపాయల చెల్లింపు నమోదు అయింది.`
+          : (currentLang === 'hi-IN' ? `${action.worker.name} को ${action.amount} रुपये दर्ज किया गया.` : `₹${action.amount} payment for ${action.worker.name} recorded.`);
         speak(feedback);
       } else {
-        await API.addPayment({ worker: action.worker.id, amount: action.amount, description: 'Voice Payment' });
-        await refreshAll();
-        showToast(`Payment of ₹${action.amount} recorded for ${action.worker.name}! 💰`);
+        try {
+          const ok = await API.addPayment({ worker: action.worker.id, amount: action.amount, description: 'Voice Payment' });
+          if (ok) {
+            await refreshAll();
+            showToast(`Payment of ₹${action.amount} recorded for ${action.worker.name}! 💰`);
+          } else {
+            showToast(`⚠️ Server error saving payment. Is Django running?`);
+          }
+        } catch (e) {
+          showToast(`❌ Cannot reach server at 127.0.0.1:8000. Start Django backend!`);
+          console.error('Payment save error:', e);
+        }
         const feedback = currentLang === 'te-IN'
           ? `${action.worker.name} కి ${action.amount} రూపాయల చెల్లింపు నమోదు చేయబడింది.`
           : (currentLang === 'hi-IN' ? `${action.worker.name} को ${action.amount} रुपये का भुगतान दर्ज हुआ.` : `Recorded payment of ₹${action.amount} for ${action.worker.name}.`);
@@ -372,12 +394,22 @@ const VoiceAssistant = (() => {
     } else if (action.type === 'TASK') {
       const isDemo = action.worker._isDemo;
       if (isDemo) {
-        showToast(`[Demo] Task assigned to ${action.worker.name} — start server to save`);
-        speak(currentLang === 'te-IN' ? `డెమో మోడ్: ${action.worker.name} కి పని గుర్తించబడింది.` : `Demo: Task for ${action.worker.name} recognized.`);
+        STATE.tasks.push({ id: Date.now(), worker: action.worker.id, description: action.taskDesc || 'General Farm Work', is_completed: false, date: todayISO() });
+        showToast(`Task assigned to ${action.worker.name} (Demo)`);
+        speak(currentLang === 'te-IN' ? `${action.worker.name} కి పని కేటాయించబడింది.` : `Task assigned to ${action.worker.name}.`);
       } else {
-        await API.addTask({ worker: action.worker.id, description: action.taskDesc });
-        await refreshAll();
-        showToast(`Task assigned to ${action.worker.name}! 📋`);
+        try {
+          const ok = await API.addTask({ worker: action.worker.id, description: action.taskDesc });
+          if (ok) {
+            await refreshAll();
+            showToast(`Task assigned to ${action.worker.name}! 📋`);
+          } else {
+            showToast(`⚠️ Server error saving task. Is Django running?`);
+          }
+        } catch (e) {
+          showToast(`❌ Cannot reach server at 127.0.0.1:8000. Start Django backend!`);
+          console.error('Task save error:', e);
+        }
         const feedback = currentLang === 'te-IN'
           ? `${action.worker.name} కి పని కేటాయించబడింది.`
           : (currentLang === 'hi-IN' ? `${action.worker.name} को काम दिया गया.` : `Task assigned to ${action.worker.name}.`);

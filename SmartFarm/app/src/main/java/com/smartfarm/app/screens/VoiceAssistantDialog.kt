@@ -482,18 +482,21 @@ fun executeAndroidVoiceAction(action: ParsedVoiceAction, viewModel: WorkerViewMo
             action.worker?.let { w ->
                 val todayStr = SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(Date())
                 viewModel.submitAttendance(todayStr, mapOf(w.id to action.status))
+                viewModel.refreshAll()
             }
             onDone()
         }
         VoiceActionType.PAYMENT -> {
             action.worker?.let { w ->
                 viewModel.recordPayment(w.id, action.amount)
+                viewModel.refreshAll()
             }
             onDone()
         }
         VoiceActionType.TASK -> {
             action.worker?.let { w ->
                 viewModel.addTask(w.id, action.taskDescription)
+                viewModel.refreshAll()
             }
             onDone()
         }
