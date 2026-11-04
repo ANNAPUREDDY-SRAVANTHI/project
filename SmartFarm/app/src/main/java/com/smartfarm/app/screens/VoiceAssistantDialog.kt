@@ -381,13 +381,22 @@ fun parseMultilingualIntent(spokenText: String, workers: List<Worker>, viewModel
         )
     }
 
-    // 1. ATTENDANCE
-    val isAttendance = text.contains("attendance") || text.contains("present") || text.contains("absent") ||
-            spokenText.contains("హాజరు") || spokenText.contains("ప్రెసెంట్") || spokenText.contains("ఆబ్సెంట్") || spokenText.contains("రాలేదు") ||
-            spokenText.contains("उपस्थित") || spokenText.contains("अनुपस्थित") || spokenText.contains("हाजिरी")
-    if (isAttendance && matchedWorker != null) {
-        val isAbsent = text.contains("absent") || spokenText.contains("ఆబ్సెంట్") || spokenText.contains("రాలేదు") || spokenText.contains("अनुपस्थित")
-        val status = if (isAbsent) "Absent" else "Present"
+    // 1. ATTENDANCE (Handles diverse colloquial phrasing: "వచ్చాడు", "రాలేదు", "సెలవు", "ఆయా", "नहीं आया")
+    val absentKeywords = listOf(
+        "absent", "not come", "didn't come", "leave", "off",
+        "ఆబ్సెంట్", "రాలేదు", "రాలా", "రాలే", "సెలవు", "డుమ్మా", "గైర్హాజరు", "లేడు", "లేదు",
+        "अनुपस्थित", "नहीं आया", "नहीं आई", "छुट्टी", "गायब", "नागा"
+    )
+    val presentKeywords = listOf(
+        "present", "came", "attended", "at work",
+        "హాజరు", "ప్రెసెంట్", "వచ్చాడు", "వచ్చింది", "వచ్చారు", "ఉన్నాడు", "ఉంది", "పనిలో ఉన్నాడు",
+        "उपस्थित", "हाजिरी", "आया", "आई", "आया है", "काम पर", "प्रेजेंट"
+    )
+    val isAbsentMatch = absentKeywords.any { text.contains(it) || spokenText.contains(it) }
+    val isPresentMatch = presentKeywords.any { text.contains(it) || spokenText.contains(it) }
+
+    if ((isAbsentMatch || isPresentMatch) && matchedWorker != null) {
+        val status = if (isAbsentMatch) "Absent" else "Present"
         return ParsedVoiceAction(
             type = VoiceActionType.ATTENDANCE,
             worker = matchedWorker,
@@ -396,10 +405,13 @@ fun parseMultilingualIntent(spokenText: String, workers: List<Worker>, viewModel
         )
     }
 
-    // 2. PAYMENT
-    val isPayment = text.contains("pay") || text.contains("payment") || text.contains("rupees") || text.contains("rs") || text.contains("salary") ||
-            spokenText.contains("పేమెంట్") || spokenText.contains("రూపాయలు") || spokenText.contains("చెల్లించు") || spokenText.contains("డబ్బు") ||
-            spokenText.contains("पेमेंट") || spokenText.contains("रुपये") || spokenText.contains("वेतन")
+    // 2. PAYMENT (Handles wages, advances & slang: కూలి, పైసలు, డబ్బులు, मजदूरी)
+    val paymentKeywords = listOf(
+        "pay", "payment", "paid", "gave", "give", "rupees", "rs", "salary", "wage", "advance",
+        "పేమెంట్", "రూపాయలు", "రూపాయి", "పైసలు", "డబ్బులు", "డబ్బు", "చెల్లించు", "ఇచ్చాను", "ఇవ్వు", "కూలి", "జీతం", "అడ్వాన్స్", "రాసుకో", "ఖాతా",
+        "पेमेंट", "रुपये", "रुपया", "पैसे", "वेतन", "मजदूरी", "दे दिए", "दिया", "देना", "एडवांस", "खाता"
+    )
+    val isPayment = paymentKeywords.any { text.contains(it) || spokenText.contains(it) }
     if (isPayment && matchedWorker != null && extractedAmount > 0) {
         return ParsedVoiceAction(
             type = VoiceActionType.PAYMENT,
@@ -410,15 +422,23 @@ fun parseMultilingualIntent(spokenText: String, workers: List<Worker>, viewModel
     }
 
     // 3. TASK
-    val isTask = text.contains("task") || text.contains("assign") || text.contains("work") ||
-            spokenText.contains("పని") || spokenText.contains("కేటాయించు") || spokenText.contains("काम")
+    val taskKeywords = listOf(
+        "task", "assign", "work", "duty",
+        "పని", "టాస్క్", "కేటాయించు", "చెయ్యమను", "చెయ్యాలి", "ఇవ్వు",
+        "काम", "टास्क", "सौंपो"
+    )
+    val isTask = taskKeywords.any { text.contains(it) || spokenText.contains(it) }
     if (isTask && matchedWorker != null) {
         val taskClean = spokenText
             .replace(matchedWorker.name, "", ignoreCase = true)
             .replace("task", "", ignoreCase = true)
             .replace("assign", "", ignoreCase = true)
+            .replace("work", "", ignoreCase = true)
             .replace("పని", "")
+            .replace("కేటాయించు", "")
+            .replace("చెయ్యాలి", "")
             .replace("काम", "")
+            .replace("सौंपो", "")
             .trim()
         val finalTask = if (taskClean.length > 2) taskClean else "General Farm Work"
         return ParsedVoiceAction(
@@ -429,10 +449,13 @@ fun parseMultilingualIntent(spokenText: String, workers: List<Worker>, viewModel
         )
     }
 
-    // 4. BALANCE INQUIRY
-    val isBalance = text.contains("balance") || text.contains("due") ||
-            spokenText.contains("బ్యాలెన్స్") || spokenText.contains("బాకీ") ||
-            spokenText.contains("बैलेंस") || spokenText.contains("बाकी")
+    // 4. BALANCE INQUIRY (Colloquial: "బాకీ ఎంత?", "ఎంత ఇవ్వాలి?", "कितना बाकी?")
+    val balanceKeywords = listOf(
+        "balance", "due", "pending", "earned", "owed",
+        "బ్యాలెన్స్", "బాకీ", "ఎంత ఉంది", "ఎంత ఇవ్వాలి", "ఎంత రావాలి", "మిగిలింది", "లెక్క",
+        "बैलेंस", "बाकी", "बकाया", "कितना बाकी", "कितना देना", "हिसाब"
+    )
+    val isBalance = balanceKeywords.any { text.contains(it) || spokenText.contains(it) }
     if (isBalance) {
         val target = matchedWorker ?: workers.firstOrNull()
         if (target != null) {

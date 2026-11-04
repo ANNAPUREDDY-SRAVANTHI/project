@@ -140,13 +140,23 @@ const VoiceAssistant = (() => {
       };
     }
 
-    // 1. ATTENDANCE INTENT
-    const isAttendance = text.includes('attendance') || text.includes('present') || text.includes('absent') ||
-                         text.includes('హాజరు') || text.includes('ప్రెసెంట్') || text.includes('ఆబ్సెంట్') || text.includes('రాలేదు') ||
-                         text.includes('उपस्थित') || text.includes('अनुपस्थित') || text.includes('हाजिरी');
-    if (isAttendance && worker) {
-      const isAbsent = text.includes('absent') || text.includes('ఆబ్సెంట్') || text.includes('రాలేదు') || text.includes('अनुपस्थित');
-      const status = isAbsent ? 'Absent' : 'Present';
+    // 1. ATTENDANCE INTENT (Handles diverse conversational phrasing & colloquialisms)
+    const absentKeywords = [
+      'absent', 'not come', "didn't come", 'did not come', 'on leave', 'off today',
+      'ఆబ్సెంట్', 'రాలేదు', 'రాలా', 'రాలే', 'సెలవు', 'డుమ్మా', 'గైర్హాజరు', 'లేడు', 'లేదు',
+      'अनुपस्थित', 'नहीं आया', 'नहीं आई', 'छुट्टी', 'गायब', 'नागा'
+    ];
+    const presentKeywords = [
+      'present', 'came', 'attended', 'came today', 'at work', 'is here',
+      'హాజరు', 'ప్రెసెంట్', 'వచ్చాడు', 'వచ్చింది', 'వచ్చారు', 'ఉన్నాడు', 'ఉంది', 'పనిలో ఉన్నాడు',
+      'उपस्थित', 'हाजिरी', 'आया', 'आई', 'आया है', 'काम पर है', 'प्रेजेंट'
+    ];
+
+    const isAbsentMatch = absentKeywords.some(k => text.includes(k) || transcript.includes(k));
+    const isPresentMatch = presentKeywords.some(k => text.includes(k) || transcript.includes(k));
+
+    if ((isAbsentMatch || isPresentMatch) && worker) {
+      const status = isAbsentMatch ? 'Absent' : 'Present';
       return {
         type: 'ATTENDANCE',
         worker,
@@ -155,10 +165,13 @@ const VoiceAssistant = (() => {
       };
     }
 
-    // 2. PAYMENT INTENT
-    const isPayment = text.includes('pay') || text.includes('payment') || text.includes('rupees') || text.includes('rs') || text.includes('salary') || text.includes('wage') ||
-                      text.includes('పేమెంట్') || text.includes('రూపాయలు') || text.includes('చెల్లించు') || text.includes('డబ్బు') || text.includes('ఇచ్చాను') ||
-                      text.includes('पेमेंट') || text.includes('रुपये') || text.includes('रुपया') || text.includes('वेतन');
+    // 2. PAYMENT INTENT (Handles wages, advances, informal currency & slang like కూలి, పైసలు, मजदूरी)
+    const paymentKeywords = [
+      'pay', 'payment', 'paid', 'gave', 'give', 'rupees', 'rs', 'salary', 'wage', 'advance', 'money',
+      'పేమెంట్', 'రూపాయలు', 'రూపాయి', 'పైసలు', 'పైసల్', 'డబ్బులు', 'డబ్బు', 'చెల్లించు', 'ఇచ్చాను', 'ఇవ్వు', 'కూలి', 'జీతం', 'అడ్వాన్స్', 'రాసుకో', 'ఖాతా',
+      'पेमेंट', 'रुपये', 'रुपया', 'पैसे', 'वेतन', 'मजदूरी', 'दे दिए', 'दिया', 'देना', 'एडवांस', 'खाता'
+    ];
+    const isPayment = paymentKeywords.some(k => text.includes(k) || transcript.includes(k));
     const amount = extractAmount(transcript);
     if (isPayment && worker && amount) {
       return {
@@ -169,29 +182,13 @@ const VoiceAssistant = (() => {
       };
     }
 
-    // 3. TASK ASSIGNMENT INTENT
-    const isTask = text.includes('task') || text.includes('assign') || text.includes('work') ||
-                   text.includes('పని') || text.includes('టాస్క్') || text.includes('కేటాయించు') ||
-                   text.includes('काम') || text.includes('टास्क');
-    if (isTask && worker) {
-      // Clean up description
-      let taskDesc = transcript
-        .replace(new RegExp(worker.name, 'gi'), '')
-        .replace(/assign task|add task|task for|give task|task|పని|కేటాయించు|కామ్|काम/gi, '')
-        .trim();
-      if (!taskDesc || taskDesc.length < 3) taskDesc = "General Farm Work";
-      return {
-        type: 'TASK',
-        worker,
-        taskDesc,
-        description: `Assign task "${taskDesc}" to ${worker.name}`
-      };
-    }
-
-    // 4. BALANCE INQUIRY
-    const isBalance = text.includes('balance') || text.includes('due') || text.includes('earned') ||
-                      text.includes('బ్యాలెన్స్') || text.includes('బాకీ') || text.includes('ఎంత') ||
-                      text.includes('बैलेंस') || text.includes('बाकी') || text.includes('कितना');
+    // 3. BALANCE / DUES INQUIRY (Colloquial: "బాకీ ఎంత?", "ఎంత ఇవ్వాలి?", "कितना बाकी है?")
+    const balanceKeywords = [
+      'balance', 'due', 'dues', 'pending', 'earned', 'owed', 'how much left', 'how much owe', 'account',
+      'బ్యాలెన్స్', 'బాకీ', 'ఎంత ఉంది', 'ఎంత ఇవ్వాలి', 'ఎంత రావాలి', 'మిగిలింది', 'లెక్క', 'ఎంతైంది', 'పైసలు ఎన్ని',
+      'बैलेंस', 'बाकी', 'बकाया', 'कितना हुआ', 'कितना बाकी', 'कितना देना', 'हिसाब'
+    ];
+    const isBalance = balanceKeywords.some(k => text.includes(k) || transcript.includes(k));
     if (isBalance) {
       const targetWorker = worker || (STATE.workers.length > 0 ? STATE.workers[0] : null);
       if (targetWorker) {
@@ -205,6 +202,27 @@ const VoiceAssistant = (() => {
           description: `${targetWorker.name}'s balance due is ₹${Math.round(due)} (Earned: ₹${Math.round(earned)}, Paid: ₹${Math.round(paid)})`
         };
       }
+    }
+
+    // 4. TASK ASSIGNMENT INTENT
+    const taskKeywords = [
+      'task', 'assign', 'work', 'duty', 'job',
+      'పని', 'టాస్క్', 'కేటాయించు', 'చెయ్యమను', 'చెయ్యాలి', 'ఇవ్వు',
+      'काम', 'टास्क', 'सौंपो', 'जिम्मा'
+    ];
+    const isTask = taskKeywords.some(k => text.includes(k) || transcript.includes(k));
+    if (isTask && worker) {
+      let taskDesc = transcript
+        .replace(new RegExp(worker.name, 'gi'), '')
+        .replace(/assign task|add task|task for|give task|task|duty|work|పని|కేటాయించు|కామ్|काम|सौंपो/gi, '')
+        .trim();
+      if (!taskDesc || taskDesc.length < 3) taskDesc = "General Farm Work";
+      return {
+        type: 'TASK',
+        worker,
+        taskDesc,
+        description: `Assign task "${taskDesc}" to ${worker.name}`
+      };
     }
 
     // 5. NAVIGATION / GENERAL COMMANDS
