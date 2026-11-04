@@ -7,7 +7,8 @@ import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 
 object RetrofitClient {
-    private const val BASE_URL = "http://10.241.67.57:8000/"
+    // Updated to current local Wi-Fi IP address
+    private const val BASE_URL = "http://10.124.204.57:8000/"
     private var tokenManager: TokenManager? = null
 
     fun init(context: Context) {

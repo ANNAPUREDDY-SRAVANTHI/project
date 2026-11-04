@@ -32,7 +32,7 @@ import com.smartfarm.app.viewmodel.WorkerViewModel
 import java.text.SimpleDateFormat
 import java.util.*
 
-enum class VoiceActionType { ATTENDANCE, PAYMENT, TASK, BALANCE, UNKNOWN }
+enum class VoiceActionType { ATTENDANCE, PAYMENT, TASK, BALANCE, LOGIN, UNKNOWN }
 
 data class ParsedVoiceAction(
     val type: VoiceActionType,
@@ -46,7 +46,8 @@ data class ParsedVoiceAction(
 @Composable
 fun VoiceAssistantDialog(
     viewModel: WorkerViewModel,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onLoginCommand: ((String, String) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val workers by viewModel.allWorkers.collectAsState()
@@ -102,6 +103,7 @@ fun VoiceAssistantDialog(
                             VoiceActionType.PAYMENT -> "${action.worker?.name ?: "వర్కర్"} కి ${action.amount.toInt()} రూపాయల చెల్లింపు రికార్డ్ అయింది."
                             VoiceActionType.TASK -> "${action.worker?.name ?: "వర్కర్"} కి టాస్క్ కేటాయించబడింది."
                             VoiceActionType.BALANCE -> action.displayMessage
+                            VoiceActionType.LOGIN -> "అడ్మిన్ గా లాగిన్ అవుతున్నారు."
                             else -> "కమాండ్ ప్రాసెస్ చేయబడింది."
                         }
                         "hi-IN" -> when (action.type) {
@@ -109,6 +111,7 @@ fun VoiceAssistantDialog(
                             VoiceActionType.PAYMENT -> "${action.worker?.name ?: "मजदूर"} को ${action.amount.toInt()} रुपये का भुगतान दर्ज हुआ."
                             VoiceActionType.TASK -> "${action.worker?.name ?: "मजदूर"} को काम सौंपा गया."
                             VoiceActionType.BALANCE -> action.displayMessage
+                            VoiceActionType.LOGIN -> "एडमिन के रूप में लॉगिन किया जा रहा है."
                             else -> "कमांड पूरी हो गई."
                         }
                         else -> action.displayMessage
@@ -285,11 +288,17 @@ fun VoiceAssistantDialog(
                     if (action.type != VoiceActionType.UNKNOWN && action.type != VoiceActionType.BALANCE) {
                         Button(
                             onClick = {
-                                isExecuting = true
-                                executeAndroidVoiceAction(action, viewModel) {
-                                    isExecuting = false
-                                    Toast.makeText(context, "Action Completed! ✅", Toast.LENGTH_SHORT).show()
+                                if (action.type == VoiceActionType.LOGIN) {
+                                    onLoginCommand?.invoke("admin", "admin123")
+                                    Toast.makeText(context, "Logging in as Admin... ✅", Toast.LENGTH_SHORT).show()
                                     onDismiss()
+                                } else {
+                                    isExecuting = true
+                                    executeAndroidVoiceAction(action, viewModel) {
+                                        isExecuting = false
+                                        Toast.makeText(context, "Action Completed! ✅", Toast.LENGTH_SHORT).show()
+                                        onDismiss()
+                                    }
                                 }
                             },
                             enabled = !isExecuting,
@@ -297,7 +306,10 @@ fun VoiceAssistantDialog(
                             shape = RoundedCornerShape(12.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
                         ) {
-                            Text(if (isExecuting) "Saving..." else "Confirm & Save", fontWeight = FontWeight.Bold)
+                            Text(
+                                text = if (isExecuting) "Saving..." else if (action.type == VoiceActionType.LOGIN) "Login as Admin" else "Confirm & Save",
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
                 }
@@ -357,6 +369,16 @@ fun parseMultilingualIntent(spokenText: String, workers: List<Worker>, viewModel
             "सौ" to 100.0, "दो सौ" to 200.0, "पांच सौ" to 500.0, "हजार" to 1000.0
         )
         wordNums.entries.firstOrNull { spokenText.contains(it.key) }?.value ?: 0.0
+    }
+
+    // 0. LOGIN
+    val isLogin = text.contains("login") || text.contains("లాగిన్") || text.contains("लॉगिन") ||
+            (text.contains("admin") && !text.contains("kumar"))
+    if (isLogin) {
+        return ParsedVoiceAction(
+            type = VoiceActionType.LOGIN,
+            displayMessage = "Voice Command: Login as Admin"
+        )
     }
 
     // 1. ATTENDANCE

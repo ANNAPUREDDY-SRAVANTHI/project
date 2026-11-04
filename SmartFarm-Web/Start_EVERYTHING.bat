@@ -1,4 +1,4 @@
-﻿@echo off
+@echo off
 echo ==========================================
 echo    Starting SmartFarm Backend (Django)
 echo ==========================================
@@ -9,7 +9,7 @@ timeout /t 3 /nobreak > nul
 echo ==========================================
 echo    Starting SmartFarm Web App
 echo ==========================================
-start "Web App Server" cmd /c "cd /d "C:\Users\asrav\AndroidStudioProjects\SmartFarm-Web\SmartFarm-Web" && python -m http.server 8080"
+start "Web App Server" cmd /c "cd /d "%~dp0" && python -m http.server 8080"
 
 echo.
 echo Servers are running! Opening browser...

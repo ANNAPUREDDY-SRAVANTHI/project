@@ -74,6 +74,7 @@ route('/login', (el) => {
       await refreshAll();
       navigate(role === 'Admin' ? '/admin-dashboard' : '/worker-dashboard');
     } else {
+      errEl.textContent = 'Invalid credentials. Please try again.';
       errEl.style.display = 'block';
     }
   };
@@ -84,12 +85,17 @@ route('/login', (el) => {
 //  REGISTER SCREEN
 // ============================================================
 route('/register', (el) => {
+  let regRole = 'Admin';
   el.innerHTML = `
     <div class="top-bar">
       <button class="icon-btn" onclick="history.back()">${ICONS.back}</button>
       <span class="top-bar-title">Create Account</span>
     </div>
     <div class="content">
+      <div class="role-toggle" style="margin-bottom:16px">
+        <button class="role-btn active" id="btnRegAdmin" type="button" onclick="setRegRole('Admin')">Admin</button>
+        <button class="role-btn" id="btnRegWorker" type="button" onclick="setRegRole('Worker')">Worker</button>
+      </div>
       <div class="form-group"><label class="form-label">Username</label><input class="form-input" id="regUser" placeholder="Choose a username"/></div>
       
       <div class="form-group"><label class="form-label">Password</label><input class="form-input" id="regPass" type="password" placeholder="Create password"/></div>
@@ -97,6 +103,11 @@ route('/register', (el) => {
       <div id="regErr" style="color:var(--red);font-size:13px;margin-bottom:12px;display:none">Passwords do not match.</div>
       <button class="btn btn-primary" onclick="doRegister()">Register</button>
     </div>`;
+  window.setRegRole = (r) => {
+    regRole = r;
+    el.querySelector('#btnRegAdmin').classList.toggle('active', r === 'Admin');
+    el.querySelector('#btnRegWorker').classList.toggle('active', r === 'Worker');
+  };
   window.doRegister = async () => {
     const user = el.querySelector('#regUser').value.trim();
     const pass = el.querySelector('#regPass').value;
@@ -104,9 +115,21 @@ route('/register', (el) => {
     const err = el.querySelector('#regErr');
     if (pass !== pass2) { err.textContent = 'Passwords do not match.'; err.style.display = 'block'; return; }
     if (!user || !pass) return;
-    const ok = await API.register({ username: user, password: pass });
-    if (ok) { showToast('Account created! Please log in.'); navigate('/login'); }
-    else { err.textContent = 'Registration failed. Username may already exist.'; err.style.display = 'block'; }
+    const res = await API.register({ username: user, password: pass, role: regRole });
+    if (res.ok) { showToast('Account created! Please log in.'); navigate('/login'); }
+    else { 
+        let errorMsg = 'Registration failed. Username may already exist.';
+        try {
+            const parsed = JSON.parse(res.error);
+            if (parsed.username) errorMsg = parsed.username[0];
+            else if (parsed.error) errorMsg = parsed.error;
+            else errorMsg = res.error;
+        } catch(e) {
+            if (res.error) errorMsg = res.error.substring(0, 50);
+        }
+        err.textContent = errorMsg; 
+        err.style.display = 'block'; 
+    }
   };
 });
 

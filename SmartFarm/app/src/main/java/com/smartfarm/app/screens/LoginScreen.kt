@@ -3,6 +3,7 @@ package com.smartfarm.app.screens
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -16,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -26,6 +28,8 @@ import com.smartfarm.app.api.RetrofitClient
 import com.smartfarm.app.api.TokenManager
 import com.smartfarm.app.viewmodel.WorkerViewModel
 import kotlinx.coroutines.launch
+import retrofit2.Response
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -39,6 +43,7 @@ fun LoginScreen(navController: NavController, viewModel: WorkerViewModel) {
     var showPassword by remember { mutableStateOf(false) }
     var selectedRole by remember { mutableStateOf("Admin") }
     var isLoading by remember { mutableStateOf(false) }
+    var showVoiceAssistant by remember { mutableStateOf(false) }
 
     Box(modifier = Modifier.fillMaxSize().background(Color(0xFFF1F8E9))) {
         Column(
@@ -46,7 +51,7 @@ fun LoginScreen(navController: NavController, viewModel: WorkerViewModel) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            // Your Original Header Section
+            // Header Section
             Icon(
                 imageVector = Icons.Default.Agriculture,
                 contentDescription = null,
@@ -98,7 +103,11 @@ fun LoginScreen(navController: NavController, viewModel: WorkerViewModel) {
                         onValueChange = { username = it },
                         label = { Text("Username") },
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
+                        shape = RoundedCornerShape(12.dp),
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.None,
+                            autoCorrect = false
+                        )
                     )
 
                     OutlinedTextField(
@@ -128,15 +137,49 @@ fun LoginScreen(navController: NavController, viewModel: WorkerViewModel) {
                     } else {
                         Button(
                             onClick = {
-                                if (username.isNotBlank() && password.isNotBlank()) {
+                                val cleanUser = username.trim()
+                                val cleanPass = password.trim()
+                                if (cleanUser.isNotBlank() && cleanPass.isNotBlank()) {
                                     isLoading = true
                                     scope.launch {
                                         try {
-                                            val res = RetrofitClient.instance.login(mapOf("username" to username, "password" to password))
-                                            if (res.isSuccessful) {
-                                                val token = res.body()?.get("token") ?: ""
+                                            val titleCaseUser = cleanUser.replaceFirstChar {
+                                                if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString()
+                                            }
+                                            // Fallback candidates to handle mobile keyboard auto-capitalization issues
+                                            val candidates = listOf(
+                                                cleanUser,
+                                                cleanUser.lowercase(),
+                                                titleCaseUser,
+                                                cleanUser.uppercase()
+                                            ).distinct()
+
+                                            var res: Response<Map<String, String>>? = null
+                                            var successfulUser = cleanUser
+
+                                            for (candidate in candidates) {
+                                                val response = RetrofitClient.instance.login(
+                                                    mapOf("username" to candidate, "password" to cleanPass)
+                                                )
+                                                if (response.isSuccessful) {
+                                                    res = response
+                                                    successfulUser = candidate
+                                                    break
+                                                } else {
+                                                    res = response
+                                                }
+                                            }
+
+                                            if (res != null && res.isSuccessful) {
+                                                val body = res.body()
+                                                val token = body?.get("token")
+                                                    ?: body?.get("auth_token")
+                                                    ?: body?.get("key")
+                                                    ?: body?.get("access")
+                                                    ?: body?.get("access_token")
+                                                    ?: ""
                                                 tokenManager.saveToken(token)
-                                                viewModel.setLoggedInUser(username)
+                                                viewModel.setLoggedInUser(successfulUser)
                                                 viewModel.refreshAll()
                                                 if (selectedRole == "Admin") {
                                                     navController.navigate("adminDashboard") { popUpTo("login") { inclusive = true } }
@@ -144,12 +187,20 @@ fun LoginScreen(navController: NavController, viewModel: WorkerViewModel) {
                                                     navController.navigate("workerDashboard") { popUpTo("login") { inclusive = true } }
                                                 }
                                             } else {
-                                                Toast.makeText(context, "Invalid credentials", Toast.LENGTH_SHORT).show()
+                                                val errBody = try { res?.errorBody()?.string() } catch (e: Exception) { null }
+                                                val msg = when {
+                                                    errBody.isNullOrBlank() -> "Invalid credentials"
+                                                    errBody.contains("non_field_errors") || errBody.contains("Unable to log in") -> "Invalid username or password"
+                                                    else -> "Login failed: ${errBody.take(100)}"
+                                                }
+                                                Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
                                             }
                                         } catch (e: Exception) {
-                                            Toast.makeText(context, "Connection Error", Toast.LENGTH_SHORT).show()
+                                            Toast.makeText(context, "Connection Error: ${e.message}", Toast.LENGTH_LONG).show()
                                         } finally { isLoading = false }
                                     }
+                                } else {
+                                    Toast.makeText(context, "Please enter username and password", Toast.LENGTH_SHORT).show()
                                 }
                             },
                             modifier = Modifier.fillMaxWidth().height(50.dp),
@@ -160,7 +211,6 @@ fun LoginScreen(navController: NavController, viewModel: WorkerViewModel) {
                         }
                     }
 
-                    // Reset Password Option inside the card
                     TextButton(
                         onClick = { navController.navigate("forgotPassword") },
                         modifier = Modifier.align(Alignment.CenterHorizontally)
@@ -172,13 +222,87 @@ fun LoginScreen(navController: NavController, viewModel: WorkerViewModel) {
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // --- THE ORIGINAL REGISTER OPTION ---
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Don't have an account?", color = Color.Gray)
                 TextButton(onClick = { navController.navigate("register") }) {
                     Text("Register Now", color = Color(0xFF1B5E20), fontWeight = FontWeight.Bold)
                 }
             }
+        }
+
+        // --- MULTILINGUAL AI VOICE ASSISTANT (TOP-END QUICK ACCESS) ---
+        IconButton(
+            onClick = { showVoiceAssistant = true },
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(16.dp)
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = Color(0xFFE8F5E9),
+                modifier = Modifier.size(44.dp),
+                shadowElevation = 2.dp
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Default.Mic,
+                        contentDescription = "AI Voice Assistant",
+                        tint = Color(0xFF2E7D32),
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            }
+        }
+
+        // --- MULTILINGUAL AI VOICE ASSISTANT (FLOATING ACTION BUTTON) ---
+        FloatingActionButton(
+            onClick = { showVoiceAssistant = true },
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(24.dp),
+            containerColor = Color(0xFF2E7D32),
+            contentColor = Color.White,
+            shape = CircleShape,
+            elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 6.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Mic,
+                contentDescription = "AI Voice Assistant (Multilingual)"
+            )
+        }
+
+        if (showVoiceAssistant) {
+            VoiceAssistantDialog(
+                viewModel = viewModel,
+                onDismiss = { showVoiceAssistant = false },
+                onLoginCommand = { user, pass ->
+                    username = user
+                    password = pass
+                    selectedRole = "Admin"
+                    scope.launch {
+                        isLoading = true
+                        try {
+                            val res = RetrofitClient.instance.login(com.smartfarm.app.api.LoginRequest(user, pass))
+                            if (res.isSuccessful && res.body()?.token != null) {
+                                val token = res.body()!!.token
+                                tokenManager.saveToken(token)
+                                tokenManager.saveRole("Admin")
+                                viewModel.setLoggedInUser(user)
+                                viewModel.refreshAll()
+                                navController.navigate("adminDashboard") {
+                                    popUpTo("login") { inclusive = true }
+                                }
+                            } else {
+                                Toast.makeText(context, "Voice Login failed", Toast.LENGTH_SHORT).show()
+                            }
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "Login Error: ${e.message}", Toast.LENGTH_SHORT).show()
+                        } finally {
+                            isLoading = false
+                        }
+                    }
+                }
+            )
         }
     }
 }

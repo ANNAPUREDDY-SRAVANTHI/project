@@ -75,9 +75,10 @@ const VoiceAssistant = (() => {
   // Find worker in STATE.workers by spoken name
   function findWorker(spokenText) {
     const textLower = spokenText.toLowerCase();
+    const workers = (window.STATE && Array.isArray(STATE.workers)) ? STATE.workers : [];
     
     // Check direct English matches
-    for (const w of STATE.workers) {
+    for (const w of workers) {
       const name = w.name.toLowerCase();
       if (textLower.includes(name)) return w;
     }
@@ -85,13 +86,13 @@ const VoiceAssistant = (() => {
     // Check phonetic Telugu/Hindi mapping
     for (const [regional, eng] of Object.entries(PHONETIC_MAP)) {
       if (spokenText.includes(regional)) {
-        const found = STATE.workers.find(w => w.name.toLowerCase().includes(eng));
+        const found = workers.find(w => w.name.toLowerCase().includes(eng));
         if (found) return found;
       }
     }
 
     // Fallback: check parts of names
-    for (const w of STATE.workers) {
+    for (const w of workers) {
       const parts = w.name.toLowerCase().split(' ');
       for (const p of parts) {
         if (p.length > 2 && textLower.includes(p)) return w;
@@ -128,6 +129,16 @@ const VoiceAssistant = (() => {
   function parseIntent(transcript) {
     const text = transcript.toLowerCase();
     const worker = findWorker(transcript);
+
+    // 0. LOGIN INTENT (Works directly on Login page)
+    const isLogin = text.includes('login') || text.includes('లాగిన్') || text.includes('लॉगिन') ||
+                    (text.includes('admin') && !text.includes('kumar'));
+    if (isLogin) {
+      return {
+        type: 'LOGIN',
+        description: 'Voice Login: Log in as Admin'
+      };
+    }
 
     // 1. ATTENDANCE INTENT
     const isAttendance = text.includes('attendance') || text.includes('present') || text.includes('absent') ||
@@ -213,6 +224,28 @@ const VoiceAssistant = (() => {
   // Execute Action
   async function executeAction(action) {
     if (!action) return;
+
+    if (action.type === 'LOGIN') {
+      const uField = document.getElementById('loginUsername');
+      const pField = document.getElementById('loginPassword');
+      if (uField && pField) {
+        uField.value = 'admin';
+        pField.value = 'admin123';
+        const submitBtn = document.querySelector('.login-card button.btn-primary');
+        if (submitBtn) submitBtn.click();
+      } else {
+        const res = await API.login('admin', 'admin123');
+        if (res.ok) {
+          API.saveUser('admin', 'Admin');
+          navigate('/admin-dashboard');
+        }
+      }
+      const feedback = currentLang === 'te-IN' 
+        ? "అడ్మిన్ గా లాగిన్ అవుతున్నారు." 
+        : (currentLang === 'hi-IN' ? "एडमिन के रूप में लॉगिन हो रहा है." : "Logging in as Admin.");
+      speak(feedback);
+      return;
+    }
 
     if (action.type === 'ATTENDANCE') {
       const today = todayISO();

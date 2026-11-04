@@ -1,0 +1,9 @@
+{
+  "name": "smartfarm-web",
+  "version": "1.0.0",
+  "description": "SmartFarm Web Portal",
+  "scripts": {
+    "start": "python -m http.server 8080",
+    "dev": "python -m http.server 8080"
+  }
+}

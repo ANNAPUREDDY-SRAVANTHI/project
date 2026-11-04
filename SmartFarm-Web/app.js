@@ -127,8 +127,8 @@ async function renderRoute() {
   app.appendChild(screen);
   await handler(screen, param);
 
-  // Multilingual Voice Assistant floating trigger on logged-in dashboard screens
-  if (window.VoiceAssistant && API.isLoggedIn() && base !== '/splash' && base !== '/login' && base !== '/register' && base !== '/forgot-password') {
+  // Multilingual Voice Assistant floating trigger accessible across all screens
+  if (window.VoiceAssistant && base !== '/splash') {
     VoiceAssistant.renderFloatingButton();
   } else {
     const existing = document.getElementById('vaFloatingBtn');

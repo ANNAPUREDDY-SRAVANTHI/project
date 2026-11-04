@@ -1,4 +1,4 @@
-﻿// ============================================================
+// ============================================================
 //  SmartFarm Web — API Layer
 //  Mirrors: ApiService.kt + RetrofitClient.kt
 // ============================================================
@@ -25,10 +25,19 @@ const API = (() => {
 
   async function login(username, password) {
     const res = await http("POST", "api-token-auth/", { username, password });
-    if (res.ok) { const data = await res.json(); saveToken(data.token); return { ok: true }; }
+    if (res.ok) { const data = await res.json(); saveToken(data.token); return { ok: true, data: data }; }
     return { ok: false };
   }
-  async function register(data) { const res = await http("POST", "api/register/", data); return res.ok; }
+  async function register(data) { 
+    try {
+      const res = await http("POST", "api/register/", data); 
+      if (res.ok) return { ok: true }; 
+      const err = await res.text();
+      return { ok: false, error: err };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  }
   async function forgotPassword(username, password) { await http("POST", "api/forgot-password/", { username, password }); }
 
   async function getWorkers() { try { const r = await http("GET","api/workers/"); return r.ok ? await r.json() : []; } catch { return []; } }
