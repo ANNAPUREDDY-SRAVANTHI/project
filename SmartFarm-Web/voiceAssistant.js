@@ -130,11 +130,9 @@ const VoiceAssistant = (() => {
   function getWorkerList() {
     const live = (window.STATE && Array.isArray(STATE.workers) && STATE.workers.length > 0)
       ? STATE.workers : null;
-    if (!live) {
-      // Backend offline — seed STATE.workers so finance/task/attendance screens render demo data
-      STATE.workers = DEMO_WORKERS;
-    }
-    return STATE.workers;
+    // Return real workers if available, demo workers ONLY for voice name-matching
+    // NEVER overwrite STATE.workers — that would destroy real payment/attendance data
+    return live || DEMO_WORKERS;
   }
 
   // Find worker in STATE.workers by spoken name
@@ -455,9 +453,6 @@ const VoiceAssistant = (() => {
       transcriptEl.textContent = `"${transcript}"`;
       transcriptEl.style.color = '#1B5E20';
     }
-
-    // Seed demo workers into STATE so finance/task screens render properly
-    getWorkerList();
 
     const action = parseIntent(transcript);
     if (!resultCardEl) return;
