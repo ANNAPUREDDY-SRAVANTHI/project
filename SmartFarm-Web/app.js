@@ -64,15 +64,19 @@ const STATE = {
 
 // ── Refresh All Data ──────────────────────────────────────────
 async function refreshAll() {
-  const [workers, attendance, payments, tasks, notifications] = await Promise.all([
-    API.getWorkers(), API.getAllAttendance(),
-    API.getAllPayments(), API.getTasks(), API.getNotifications()
-  ]);
-  STATE.workers = workers;
-  STATE.attendance = attendance;
-  STATE.payments = payments;
-  STATE.tasks = tasks;
-  STATE.notifications = notifications;
+  try {
+    const [workers, attendance, payments, tasks, notifications] = await Promise.all([
+      API.getWorkers(), API.getAllAttendance(),
+      API.getAllPayments(), API.getTasks(), API.getNotifications()
+    ]);
+    if (Array.isArray(workers) && workers.length > 0) STATE.workers = workers;
+    if (Array.isArray(attendance)) STATE.attendance = attendance;
+    if (Array.isArray(payments) && (payments.length > 0 || STATE.payments.length === 0)) STATE.payments = payments;
+    if (Array.isArray(tasks) && (tasks.length > 0 || STATE.tasks.length === 0)) STATE.tasks = tasks;
+    if (Array.isArray(notifications)) STATE.notifications = notifications;
+  } catch (err) {
+    console.warn('refreshAll network issue, keeping in-memory state:', err);
+  }
 }
 
 // ── Toast ─────────────────────────────────────────────────────
@@ -110,7 +114,13 @@ function showModal(title, bodyHTML, onConfirm, confirmText = 'Confirm', confirmC
 const ROUTES = {};
 function route(path, fn) { ROUTES[path] = fn; }
 function navigate(path) {
-  window.location.hash = path;
+  const current = window.location.hash.replace('#', '');
+  const target = path.replace('#', '');
+  if (current === target) {
+    renderRoute();
+  } else {
+    window.location.hash = target;
+  }
 }
 function getRoute() { return window.location.hash.replace('#', '') || '/splash'; }
 

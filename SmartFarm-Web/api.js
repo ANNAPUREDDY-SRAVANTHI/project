@@ -46,14 +46,36 @@ const API = (() => {
   async function deleteWorker(id) { const r = await http("DELETE",`api/workers/${id}/`); return r.ok; }
 
   async function getAllAttendance() { try { const r = await http("GET","api/attendance/"); return r.ok ? await r.json() : []; } catch { return []; } }
-  async function submitAttendance(rec) { const r = await http("POST","api/attendance/",rec); return r.ok; }
+  async function submitAttendance(rec) {
+    try {
+      let existing = (window.STATE && Array.isArray(STATE.attendance))
+        ? STATE.attendance.find(r => String(r.worker) === String(rec.worker) && r.date === rec.date)
+        : null;
+      if (existing && existing.id) {
+        const r = await http("PUT", `api/attendance/${existing.id}/`, rec);
+        if (r.ok) return true;
+      }
+      const r = await http("POST", "api/attendance/", rec);
+      if (r.ok) return true;
+      const fresh = await getAllAttendance();
+      if (Array.isArray(fresh) && fresh.length > 0) {
+        if (window.STATE) STATE.attendance = fresh;
+        const match = fresh.find(r => String(r.worker) === String(rec.worker) && r.date === rec.date);
+        if (match && match.id) {
+          const r2 = await http("PUT", `api/attendance/${match.id}/`, rec);
+          return r2.ok;
+        }
+      }
+      return false;
+    } catch { return false; }
+  }
 
   async function getAllPayments() { try { const r = await http("GET","api/payments/"); return r.ok ? await r.json() : []; } catch { return []; } }
-  async function addPayment(rec) { const r = await http("POST","api/payments/",rec); return r.ok; }
+  async function addPayment(rec) { try { const r = await http("POST","api/payments/",rec); return r.ok; } catch { return false; } }
 
   async function getTasks() { try { const r = await http("GET","api/tasks/"); return r.ok ? await r.json() : []; } catch { return []; } }
-  async function addTask(rec) { const r = await http("POST","api/tasks/",rec); return r.ok; }
-  async function updateTask(id, data) { const r = await http("PATCH",`api/tasks/${id}/`,data); return r.ok; }
+  async function addTask(rec) { try { const r = await http("POST","api/tasks/",rec); return r.ok; } catch { return false; } }
+  async function updateTask(id, data) { try { const r = await http("PATCH",`api/tasks/${id}/`,data); return r.ok; } catch { return false; } }
 
   async function getNotifications() { try { const r = await http("GET","api/notifications/"); return r.ok ? await r.json() : []; } catch { return []; } }
 

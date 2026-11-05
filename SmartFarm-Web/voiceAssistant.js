@@ -11,9 +11,9 @@ const VoiceAssistant = (() => {
   let synth = window.speechSynthesis;
 
   const LANG_CONFIG = {
-    'en-IN': { label: 'English', flag: '🇬🇧', hint: 'e.g. "Pay 500 to Kumar" or "Mark Meena present"' },
-    'te-IN': { label: 'తెలుగు', flag: '🇮🇳', hint: 'ఉదా: "కుమార్ కి 500 పేమెంట్" లేదా "మీనా ప్రెసెంట్"' },
-    'hi-IN': { label: 'हिंदी', flag: '🇮🇳', hint: 'उदा: "कुमार को 500 रुपये पेमेंट" या "मीना प्रेजेंट"' }
+    'en-IN': { label: 'English', flag: '\uD83C\uDDEC\uD83C\uDDE7', hint: 'e.g. "Pay 500 to Kumar" or "Mark Meena present"' },
+    'te-IN': { label: '\u0C24\u0C46\u0C32\u0C41\u0C17\u0C41', flag: '\uD83C\uDDEE\uD83C\uDDF3', hint: '\u0C09\u0C26\u0C3E: "\u0C15\u0C41\u0C2E\u0C3E\u0C30\u0C4D \u0C15\u0C3F 500 \u0C2A\u0C47\u0C2E\u0C46\u0C02\u0C1F\u0C4D" \u0C32\u0C47\u0C26\u0C3E "\u0C2E\u0C40\u0C28\u0C3E \u0C2A\u0C4D\u0C30\u0C46\u0C38\u0C46\u0C02\u0C1F\u0C4D"' },
+    'hi-IN': { label: '\u0939\u093F\u0902\u0926\u0940', flag: '\uD83C\uDDEE\uD83C\uDDF3', hint: '\u0909\u0926\u093E: "\u0915\u0941\u092E\u093E\u0930 \u0915\u094B 500 \u0930\u0941\u092A\u092F\u0947 \u092A\u0947\u092E\u0947\u0902\u091F" \u092F\u093E "\u092E\u0940\u0928\u093E \u092A\u094D\u0930\u0947\u091C\u0947\u0902\u091F"' }
   };
 
   // Common Telugu/Hindi name phonetics to match worker English names
@@ -84,15 +84,15 @@ const VoiceAssistant = (() => {
     recognition.onerror = (event) => {
       console.warn("Speech Recognition Error:", event.error);
       if (event.error === 'no-speech') {
-        updateModalStatus("👂 No speech heard. Tap the mic to speak.");
+        updateModalStatus("\uD83D\uDC42 No speech heard. Tap the mic to speak.");
       } else if (event.error === 'not-allowed') {
-        updateModalStatus("🔒 Mic is blocked. In Chrome, click 🔒 icon in address bar to Allow.");
+        updateModalStatus("\uD83D\uDD12 Mic is blocked. In Chrome, click lock icon in address bar to Allow.");
       } else if (event.error === 'audio-capture') {
-        updateModalStatus("⚠️ No microphone hardware found.");
+        updateModalStatus("\u26A0\uFE0F No microphone hardware found.");
       } else if (event.error === 'network') {
-        updateModalStatus("⚠️ Network error contacting Google speech service.");
+        updateModalStatus("\u26A0\uFE0F Network error contacting speech service.");
       } else {
-        updateModalStatus(`ℹ️ Tap mic to speak (${event.error})`);
+        updateModalStatus(`\u2139\uFE0F Tap mic to speak (${event.error})`);
       }
       setListeningState(false);
     };
@@ -218,14 +218,17 @@ const VoiceAssistant = (() => {
     const isAbsentMatch = absentKeywords.some(k => text.includes(k) || transcript.includes(k));
     const isPresentMatch = presentKeywords.some(k => text.includes(k) || transcript.includes(k));
 
-    if ((isAbsentMatch || isPresentMatch) && worker) {
-      const status = isAbsentMatch ? 'Absent' : 'Present';
-      return {
-        type: 'ATTENDANCE',
-        worker,
-        status,
-        description: `Mark ${worker.name} as ${status}`
-      };
+    if (isAbsentMatch || isPresentMatch) {
+      const targetWorker = worker || getWorkerList()[0];
+      if (targetWorker) {
+        const status = isAbsentMatch ? 'Absent' : 'Present';
+        return {
+          type: 'ATTENDANCE',
+          worker: targetWorker,
+          status,
+          description: `Mark ${targetWorker.name} as ${status}`
+        };
+      }
     }
 
     // 2. PAYMENT INTENT (Handles wages, advances, informal currency & slang like కూలి, పైసలు, मजदूरी)
@@ -236,13 +239,16 @@ const VoiceAssistant = (() => {
     ];
     const isPayment = paymentKeywords.some(k => text.includes(k) || transcript.includes(k));
     const amount = extractAmount(transcript);
-    if (isPayment && worker && amount) {
-      return {
-        type: 'PAYMENT',
-        worker,
-        amount,
-        description: `Record ₹${amount} payment for ${worker.name}`
-      };
+    if (isPayment && amount) {
+      const targetWorker = worker || getWorkerList()[0];
+      if (targetWorker) {
+        return {
+          type: 'PAYMENT',
+          worker: targetWorker,
+          amount,
+          description: `Record ₹${amount} payment for ${targetWorker.name}`
+        };
+      }
     }
 
     // 3. BALANCE / DUES INQUIRY (Colloquial: "బాకీ ఎంత?", "ఎంత ఇవ్వాలి?", "कितना बाकी है?")
@@ -281,20 +287,23 @@ const VoiceAssistant = (() => {
       'काम', 'टास्क', 'सौंपो', 'जिम्मा'
     ];
     const isTask = taskKeywords.some(k => text.includes(k) || transcript.includes(k));
-    if (isTask && worker) {
-      let taskDesc = transcript
-        .replace(new RegExp(worker.name, 'gi'), '')
-        .replace(/assign task|add task|task for|give task|task|duty|work|పని|కేటాయించు|కామ్|काम|सौंपो/gi, '')
-        .replace(/^\s*(to|for|కి|కో|के लिए)\s+/i, '')
-        .replace(/\s*(to|for|కి|కో|के लिए)\s*$/i, '')
-        .trim();
-      if (!taskDesc || taskDesc.length < 2) taskDesc = "General Farm Work";
-      return {
-        type: 'TASK',
-        worker,
-        taskDesc,
-        description: `Assign task "${taskDesc}" to ${worker.name}`
-      };
+    if (isTask) {
+      const targetWorker = worker || getWorkerList()[0];
+      if (targetWorker) {
+        let taskDesc = transcript
+          .replace(new RegExp(targetWorker.name, 'gi'), '')
+          .replace(/assign task|add task|task for|give task|task|duty|work|any worker|worker|any of my worker|పని|కేటాయించు|కామ్|काम|सौंपो/gi, '')
+          .replace(/^\s*(to|for|కి|కో|के लिए)\s+/i, '')
+          .replace(/\s*(to|for|కి|కో|के लिए)\s*$/i, '')
+          .trim();
+        if (!taskDesc || taskDesc.length < 2) taskDesc = "General Farm Work";
+        return {
+          type: 'TASK',
+          worker: targetWorker,
+          taskDesc,
+          description: `Assign task "${taskDesc}" to ${targetWorker.name}`
+        };
+      }
     }
 
     // 5. NAVIGATION / GENERAL COMMANDS
@@ -340,25 +349,29 @@ const VoiceAssistant = (() => {
     if (action.type === 'ATTENDANCE') {
       const wid = parseInt(action.worker.id) || action.worker.id;
       const today = todayISO();
-      const status = action.status;
+      const status = action.status || 'Present';
       const isDemo = !!action.worker._isDemo;
 
-      if (isDemo) {
-        STATE.attendance = STATE.attendance.filter(r => !(String(r.worker) === String(wid) && r.date === today));
-        STATE.attendance.push({ id: Date.now(), worker: wid, date: today, status: status });
-        showToast(`Attendance Marked: ${action.worker.name} (${status}) ✅`);
-      } else {
+      // 1. Immediately update in-memory attendance
+      STATE.attendance = STATE.attendance.filter(r => !(String(r.worker) === String(wid) && r.date === today));
+      STATE.attendance.push({ id: Date.now(), worker: wid, date: today, status: status });
+
+      // 2. Persist to backend
+      if (!isDemo) {
         try {
           await API.submitAttendance({ worker: wid, date: today, status: status });
-          await refreshAll();
-          showToast(`Attendance Marked: ${action.worker.name} (${status}) ✅`);
         } catch (e) {
-          console.error('Attendance save error:', e);
-          STATE.attendance = STATE.attendance.filter(r => !(String(r.worker) === String(wid) && r.date === today));
-          STATE.attendance.push({ id: Date.now(), worker: wid, date: today, status: status });
-          showToast(`Attendance Marked: ${action.worker.name} (${status}) ✅`);
+          console.warn('Attendance save error:', e);
         }
       }
+      try { await refreshAll(); } catch(e){}
+
+      // 3. Ensure record is preserved in local state
+      if (!STATE.attendance.some(r => String(r.worker) === String(wid) && r.date === today && r.status === status)) {
+        STATE.attendance.push({ id: Date.now(), worker: wid, date: today, status: status });
+      }
+
+      showToast(`Attendance Marked: ${action.worker.name} (${status}) \u2705`);
 
       const feedback = currentLang === 'te-IN'
         ? `${action.worker.name} కి హాజరు ${status === 'Present' ? 'ప్రెసెంట్' : 'ఆబ్సెంట్'} గా నమోదు చేయబడింది.`
@@ -366,29 +379,33 @@ const VoiceAssistant = (() => {
       speak(feedback);
       closeModal();
       navigate('/attendance-dashboard');
+      renderRoute();
       return;
     } else if (action.type === 'PAYMENT') {
       const wid = parseInt(action.worker.id) || action.worker.id;
       const amt = parseFloat(action.amount);
       const isDemo = !!action.worker._isDemo;
 
-      if (isDemo) {
-        STATE.payments.push({ id: Date.now(), worker: wid, amount: amt, date: todayISO(), description: 'Voice Payment' });
-        showToast(`Payment of ₹${amt} recorded for ${action.worker.name}! 💰`);
-      } else {
+      // 1. Immediately update in-memory payments
+      const localPay = { id: Date.now(), worker: wid, amount: amt, date: todayISO() };
+      STATE.payments.push(localPay);
+
+      // 2. Persist to backend
+      if (!isDemo) {
         try {
-          const ok = await API.addPayment({ worker: wid, amount: amt, description: 'Voice Payment' });
-          if (!ok) {
-            await API.addPayment({ worker: wid, amount: amt });
-          }
-          await refreshAll();
-          showToast(`Payment of ₹${amt} recorded for ${action.worker.name}! 💰`);
+          await API.addPayment({ worker: wid, amount: amt });
         } catch (e) {
-          console.error('Payment save error:', e);
-          STATE.payments.push({ id: Date.now(), worker: wid, amount: amt, date: todayISO(), description: 'Voice Payment' });
-          showToast(`Payment of ₹${amt} recorded for ${action.worker.name}! 💰`);
+          console.warn('Payment save error:', e);
         }
       }
+      try { await refreshAll(); } catch(e){}
+
+      // 3. Ensure record is preserved in local state
+      if (!STATE.payments.some(p => String(p.worker) === String(wid) && parseFloat(p.amount) === amt && p.date === todayISO())) {
+        STATE.payments.push(localPay);
+      }
+
+      showToast(`Payment of ₹${amt} recorded for ${action.worker.name}! \uD83D\uDCB0`);
 
       const feedback = currentLang === 'te-IN'
         ? `${action.worker.name} కి ${amt} రూపాయల చెల్లింపు నమోదు చేయబడింది.`
@@ -396,26 +413,33 @@ const VoiceAssistant = (() => {
       speak(feedback);
       closeModal();
       navigate('/finance');
+      renderRoute();
       return;
     } else if (action.type === 'TASK') {
       const wid = parseInt(action.worker.id) || action.worker.id;
       const desc = action.taskDesc || 'General Farm Work';
       const isDemo = !!action.worker._isDemo;
 
-      if (isDemo) {
-        STATE.tasks.push({ id: Date.now(), worker: wid, description: desc, is_completed: false, date: todayISO() });
-        showToast(`Task assigned to ${action.worker.name}! 📋`);
-      } else {
+      // 1. Immediately update in-memory tasks
+      const localTask = { id: Date.now(), worker: wid, description: desc, is_completed: false, date: todayISO() };
+      STATE.tasks.push(localTask);
+
+      // 2. Persist to backend
+      if (!isDemo) {
         try {
           await API.addTask({ worker: wid, description: desc });
-          await refreshAll();
-          showToast(`Task assigned to ${action.worker.name}! 📋`);
         } catch (e) {
-          console.error('Task save error:', e);
-          STATE.tasks.push({ id: Date.now(), worker: wid, description: desc, is_completed: false, date: todayISO() });
-          showToast(`Task assigned to ${action.worker.name}! 📋`);
+          console.warn('Task save error:', e);
         }
       }
+      try { await refreshAll(); } catch(e){}
+
+      // 3. Ensure record is preserved in local state
+      if (!STATE.tasks.some(t => String(t.worker) === String(wid) && t.description === desc)) {
+        STATE.tasks.push(localTask);
+      }
+
+      showToast(`Task assigned to ${action.worker.name}! \uD83D\uDCCB`);
 
       const feedback = currentLang === 'te-IN'
         ? `${action.worker.name} కి పని కేటాయించబడింది.`
@@ -423,6 +447,7 @@ const VoiceAssistant = (() => {
       speak(feedback);
       closeModal();
       navigate('/admin-tasks');
+      renderRoute();
       return;
     } else if (action.type === 'BALANCE') {
       const wid = parseInt(action.worker.id) || action.worker.id;
@@ -477,39 +502,29 @@ const VoiceAssistant = (() => {
           ${action.description}
         </div>`;
 
-      // Speak confirmation exactly like Android auto-speak on detection
-      let msg = action.description + '. Tap Confirm and Save.';
+      // Speak confirmation feedback
+      let msg = action.description;
       if (currentLang === 'te-IN') {
-        if (action.type === 'ATTENDANCE') msg = `${action.worker?.name} కి హాజరు ${action.status === 'Present' ? 'ప్రెసెంట్' : 'ఆబ్సెంట్'} గా నమోదు అవుతుంది. కన్ఫర్మ్ చేయండి.`;
-        else if (action.type === 'PAYMENT') msg = `${action.worker?.name} కి ${action.amount} రూపాయల చెల్లింపు. కన్ఫర్మ్ చేయండి.`;
-        else if (action.type === 'TASK')    msg = `${action.worker?.name} కి పని కేటాయిస్తున్నారు. కన్ఫర్మ్ చేయండి.`;
-        else if (action.type === 'BALANCE') msg = action.description;
+        if (action.type === 'ATTENDANCE') msg = `${action.worker?.name} కి హాజరు ${action.status === 'Present' ? 'ప్రెసెంట్' : 'ఆబ్సెంట్'} గా నమోదు చేయబడింది.`;
+        else if (action.type === 'PAYMENT') msg = `${action.worker?.name} కి ${action.amount} రూపాయల చెల్లింపు రికార్డ్ అయింది.`;
+        else if (action.type === 'TASK')    msg = `${action.worker?.name} కి టాస్క్ కేటాయించబడింది.`;
       } else if (currentLang === 'hi-IN') {
-        if (action.type === 'ATTENDANCE') msg = `${action.worker?.name} की हाजिरी ${action.status === 'Present' ? 'उपस्थित' : 'अनुपस्थित'} दर्ज होगी। कन्फर्म करें।`;
-        else if (action.type === 'PAYMENT') msg = `${action.worker?.name} को ${action.amount} रुपये का भुगतान। कन्फर्म करें।`;
-        else if (action.type === 'TASK')    msg = `${action.worker?.name} को काम दिया जाएगा। कन्फर्म करें।`;
-        else if (action.type === 'BALANCE') msg = action.description;
+        if (action.type === 'ATTENDANCE') msg = `${action.worker?.name} की हाजिरी दर्ज कर दी गई है.`;
+        else if (action.type === 'PAYMENT') msg = `${action.worker?.name} को ${action.amount} रुपये का भुगतान दर्ज हुआ.`;
+        else if (action.type === 'TASK')    msg = `${action.worker?.name} को काम सौंपा गया.`;
       }
       speak(msg);
 
-      // Show "Confirm & Save" button — NO auto-execute (matches Android)
       if (executeBtn && action.type !== 'BALANCE' && action.type !== 'UNKNOWN') {
-        const btnLabel = action.type === 'LOGIN' ? 'Login as Admin' : 'Confirm & Save';
-        // Clone to remove old listeners
-        const fresh = executeBtn.cloneNode(true);
-        executeBtn.parentNode.replaceChild(fresh, executeBtn);
-        executeBtn = fresh;
-        executeBtn.textContent = btnLabel;
-        executeBtn.style.cssText = 'display:block;width:100%;padding:14px 0;border-radius:12px;background:#2E7D32;color:#fff;border:none;font-weight:700;font-size:15px;cursor:pointer;margin-bottom:4px;';
-        executeBtn.disabled = false;
-        executeBtn.onclick = async () => {
-          executeBtn.textContent = 'Saving...';
-          executeBtn.disabled = true;
-          await executeAction(action);
-        };
-      } else if (executeBtn) {
-        executeBtn.style.display = 'none';
+        executeBtn.textContent = 'Updating data...';
+        executeBtn.style.cssText = 'display:block;width:100%;padding:14px 0;border-radius:12px;background:#2E7D32;color:#fff;border:none;font-weight:700;font-size:15px;margin-bottom:4px;';
+        executeBtn.disabled = true;
       }
+
+      // Immediately execute action and update data
+      setTimeout(async () => {
+        await executeAction(action);
+      }, 350);
     }
   }
 
@@ -555,9 +570,9 @@ const VoiceAssistant = (() => {
         transcriptEl.textContent = 'Listening... Speak now!';
         transcriptEl.style.color = '#2E7D32';
       }
-      updateModalStatus("🎙️ Listening... Speak now!");
+      updateModalStatus("\uD83C\uDF99\uFE0F Listening... Speak now!");
       const resultCardEl = document.getElementById('vaResultCard');
-      if (resultCardEl) resultCardEl.innerHTML = `<div style="font-size:11px;color:var(--gray-text)">💡 ${LANG_CONFIG[currentLang].hint}</div>`;
+      if (resultCardEl) resultCardEl.innerHTML = `<div style="font-size:11px;color:var(--gray-text)">&#128161; ${LANG_CONFIG[currentLang].hint}</div>`;
       const executeBtn = document.getElementById('vaExecuteBtn');
       if (executeBtn) executeBtn.style.display = 'none';
     } catch (err) {
@@ -587,7 +602,7 @@ const VoiceAssistant = (() => {
       <div class="modal" style="max-width:390px;text-align:center;padding:24px 20px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
           <div style="display:flex;align-items:center;gap:8px;">
-            <span style="font-size:22px">🎙️</span>
+            <span style="font-size:22px">&#127908;</span>
             <div style="font-weight:800;font-size:17px;color:var(--green-dark)">AI Voice Assistant</div>
           </div>
           <button id="vaCloseBtn" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--gray-text)">&times;</button>
@@ -622,7 +637,7 @@ const VoiceAssistant = (() => {
 
         <!-- Result Action Preview -->
         <div id="vaResultCard" style="min-height:50px;padding:10px;background:#ffffff;border-radius:12px;border:1px solid #e0e0e0;margin-bottom:12px;text-align:left;">
-          <div style="font-size:11px;color:var(--gray-text)">💡 ${LANG_CONFIG[currentLang].hint}</div>
+          <div style="font-size:11px;color:var(--gray-text)">&#128161; ${LANG_CONFIG[currentLang].hint}</div>
         </div>
 
         <button id="vaExecuteBtn" class="btn btn-primary" style="display:none;width:100%;margin-bottom:12px;">
