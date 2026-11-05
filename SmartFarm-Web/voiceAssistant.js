@@ -285,8 +285,10 @@ const VoiceAssistant = (() => {
       let taskDesc = transcript
         .replace(new RegExp(worker.name, 'gi'), '')
         .replace(/assign task|add task|task for|give task|task|duty|work|పని|కేటాయించు|కామ్|काम|सौंपो/gi, '')
+        .replace(/^\s*(to|for|కి|కో|के लिए)\s+/i, '')
+        .replace(/\s*(to|for|కి|కో|के लिए)\s*$/i, '')
         .trim();
-      if (!taskDesc || taskDesc.length < 3) taskDesc = "General Farm Work";
+      if (!taskDesc || taskDesc.length < 2) taskDesc = "General Farm Work";
       return {
         type: 'TASK',
         worker,
@@ -336,110 +338,105 @@ const VoiceAssistant = (() => {
     }
 
     if (action.type === 'ATTENDANCE') {
-      const isDemo = action.worker._isDemo;
+      const wid = parseInt(action.worker.id) || action.worker.id;
+      const today = todayISO();
+      const status = action.status;
+      const isDemo = !!action.worker._isDemo;
+
       if (isDemo) {
-        const today = todayISO();
-        // Replace any existing entry for same worker+date so it doesn't duplicate
-        STATE.attendance = STATE.attendance.filter(r => !(r.worker === action.worker.id && r.date === today));
-        STATE.attendance.push({ id: Date.now(), worker: action.worker.id, date: today, status: action.status });
-        const statusLabel = action.status === 'Present' ? '✅ Present' : '❌ Absent';
-        const feedback = currentLang === 'te-IN'
-          ? `${action.worker.name} ${action.status === 'Present' ? 'ప్రెసెంట్' : 'ఆబ్సెంట్'} గా నమోదు అయింది.`
-          : (currentLang === 'hi-IN' ? `${action.worker.name} को ${action.status === 'Present' ? 'उपस्थित' : 'अनुपस्थित'} दर्ज किया गया.` : `${action.worker.name} marked as ${action.status}.`);
-        speak(feedback);
-        closeModal();
-        showToast(`${action.worker.name} marked ${statusLabel} ✅`);
-        renderRoute();
+        STATE.attendance = STATE.attendance.filter(r => !(String(r.worker) === String(wid) && r.date === today));
+        STATE.attendance.push({ id: Date.now(), worker: wid, date: today, status: status });
+        showToast(`Attendance Marked: ${action.worker.name} (${status}) ✅`);
       } else {
         try {
-          const today = todayISO();
-          const ok = await API.submitAttendance({ worker: action.worker.id, date: today, status: action.status });
-          if (ok) {
-            await refreshAll();
-            const feedback = currentLang === 'te-IN'
-              ? `${action.worker.name} కి హాజరు ${action.status === 'Present' ? 'ప్రెసెంట్' : 'ఆబ్సెంట్'} గా నమోదు చేయబడింది.`
-              : (currentLang === 'hi-IN' ? `${action.worker.name} की हाजिरी दर्ज हो गई है.` : `Marked ${action.worker.name} as ${action.status}.`);
-            speak(feedback);
-            closeModal();
-            showToast(`Attendance Marked: ${action.worker.name} (${action.status}) ✅`);
-            renderRoute();
-          } else {
-            showToast(`⚠️ Server error saving attendance. Is Django running?`);
-          }
+          await API.submitAttendance({ worker: wid, date: today, status: status });
+          await refreshAll();
+          showToast(`Attendance Marked: ${action.worker.name} (${status}) ✅`);
         } catch (e) {
-          showToast(`❌ Cannot reach server at 127.0.0.1:8000. Start Django backend!`);
           console.error('Attendance save error:', e);
+          STATE.attendance = STATE.attendance.filter(r => !(String(r.worker) === String(wid) && r.date === today));
+          STATE.attendance.push({ id: Date.now(), worker: wid, date: today, status: status });
+          showToast(`Attendance Marked: ${action.worker.name} (${status}) ✅`);
         }
       }
-    } else if (action.type === 'PAYMENT') {
-      const isDemo = action.worker._isDemo;
-      if (isDemo) {
-        STATE.payments.push({ id: Date.now(), worker: action.worker.id, amount: action.amount, date: todayISO(), description: 'Voice Payment' });
-        const feedback = currentLang === 'te-IN'
-          ? `${action.worker.name} కి ${action.amount} రూపాయల చెల్లింపు నమోదు అయింది.`
-          : (currentLang === 'hi-IN' ? `${action.worker.name} को ${action.amount} रुपये दर्ज किया गया.` : `₹${action.amount} payment for ${action.worker.name} recorded.`);
-        speak(feedback);
-        closeModal();
-        showToast(`₹${action.amount} payment for ${action.worker.name} recorded ✅`);
-        renderRoute();
-      } else {
-        try {
-          const ok = await API.addPayment({ worker: action.worker.id, amount: action.amount, description: 'Voice Payment' });
-          if (ok) {
-            await refreshAll();
-            const feedback = currentLang === 'te-IN'
-              ? `${action.worker.name} కి ${action.amount} రూపాయల చెల్లింపు నమోదు చేయబడింది.`
-              : (currentLang === 'hi-IN' ? `${action.worker.name} को ${action.amount} రुपये का भुगतान दर्ज हुआ.` : `Recorded payment of ₹${action.amount} for ${action.worker.name}.`);
-            speak(feedback);
-            closeModal();
-            showToast(`Payment of ₹${action.amount} recorded for ${action.worker.name}! 💰`);
-            renderRoute();
-          } else {
-            showToast(`⚠️ Server error saving payment. Is Django running?`);
-          }
-        } catch (e) {
-          showToast(`❌ Cannot reach server at 127.0.0.1:8000. Start Django backend!`);
-          console.error('Payment save error:', e);
-        }
-      }
-    } else if (action.type === 'TASK') {
-      const isDemo = action.worker._isDemo;
-      if (isDemo) {
-        STATE.tasks.push({ id: Date.now(), worker: action.worker.id, description: action.taskDesc || 'General Farm Work', is_completed: false, date: todayISO() });
-        speak(currentLang === 'te-IN' ? `${action.worker.name} కి పని కేటాయించబడింది.` : `Task assigned to ${action.worker.name}.`);
-        closeModal();
-        showToast(`Task assigned to ${action.worker.name} ✅`);
-        renderRoute();
-      } else {
-        try {
-          const ok = await API.addTask({ worker: action.worker.id, description: action.taskDesc });
-          if (ok) {
-            await refreshAll();
-            const feedback = currentLang === 'te-IN'
-              ? `${action.worker.name} కి పని కేటాయించబడింది.`
-              : (currentLang === 'hi-IN' ? `${action.worker.name} को काम दिया गया.` : `Task assigned to ${action.worker.name}.`);
-            speak(feedback);
-            closeModal();
-            showToast(`Task assigned to ${action.worker.name}! 📋`);
-            renderRoute();
-          } else {
-            showToast(`⚠️ Server error saving task. Is Django running?`);
-          }
-        } catch (e) {
-          showToast(`❌ Cannot reach server at 127.0.0.1:8000. Start Django backend!`);
-          console.error('Task save error:', e);
-        }
-      }
-    } else if (action.type === 'BALANCE') {
-      const feedback = action.isDemo
-        ? (currentLang === 'te-IN' ? `సర్వర్ నడపకుండా బ్యాలెన్స్ డేటా అందుబాటులో లేదు.` : `Balance data needs the server to be running.`)
-        : (currentLang === 'te-IN'
-          ? `${action.worker.name} బ్యాలెన్స్ బాకీ ${Math.round(action.due)} రూపాయలు.`
-          : (currentLang === 'hi-IN' ? `${action.worker.name} का बाकी बैलेंस ${Math.round(action.due)} रुपये है.` : `${action.worker.name}'s balance due is ₹${Math.round(action.due)}.`));
+
+      const feedback = currentLang === 'te-IN'
+        ? `${action.worker.name} కి హాజరు ${status === 'Present' ? 'ప్రెసెంట్' : 'ఆబ్సెంట్'} గా నమోదు చేయబడింది.`
+        : (currentLang === 'hi-IN' ? `${action.worker.name} की हाजिरी दर्ज हो गई है.` : `Marked ${action.worker.name} as ${status}.`);
       speak(feedback);
+      closeModal();
+      navigate('/attendance-dashboard');
+      return;
+    } else if (action.type === 'PAYMENT') {
+      const wid = parseInt(action.worker.id) || action.worker.id;
+      const amt = parseFloat(action.amount);
+      const isDemo = !!action.worker._isDemo;
+
+      if (isDemo) {
+        STATE.payments.push({ id: Date.now(), worker: wid, amount: amt, date: todayISO(), description: 'Voice Payment' });
+        showToast(`Payment of ₹${amt} recorded for ${action.worker.name}! 💰`);
+      } else {
+        try {
+          const ok = await API.addPayment({ worker: wid, amount: amt, description: 'Voice Payment' });
+          if (!ok) {
+            await API.addPayment({ worker: wid, amount: amt });
+          }
+          await refreshAll();
+          showToast(`Payment of ₹${amt} recorded for ${action.worker.name}! 💰`);
+        } catch (e) {
+          console.error('Payment save error:', e);
+          STATE.payments.push({ id: Date.now(), worker: wid, amount: amt, date: todayISO(), description: 'Voice Payment' });
+          showToast(`Payment of ₹${amt} recorded for ${action.worker.name}! 💰`);
+        }
+      }
+
+      const feedback = currentLang === 'te-IN'
+        ? `${action.worker.name} కి ${amt} రూపాయల చెల్లింపు నమోదు చేయబడింది.`
+        : (currentLang === 'hi-IN' ? `${action.worker.name} को ${amt} रुपये का भुगतान दर्ज हुआ.` : `Recorded payment of ₹${amt} for ${action.worker.name}.`);
+      speak(feedback);
+      closeModal();
+      navigate('/finance');
+      return;
+    } else if (action.type === 'TASK') {
+      const wid = parseInt(action.worker.id) || action.worker.id;
+      const desc = action.taskDesc || 'General Farm Work';
+      const isDemo = !!action.worker._isDemo;
+
+      if (isDemo) {
+        STATE.tasks.push({ id: Date.now(), worker: wid, description: desc, is_completed: false, date: todayISO() });
+        showToast(`Task assigned to ${action.worker.name}! 📋`);
+      } else {
+        try {
+          await API.addTask({ worker: wid, description: desc });
+          await refreshAll();
+          showToast(`Task assigned to ${action.worker.name}! 📋`);
+        } catch (e) {
+          console.error('Task save error:', e);
+          STATE.tasks.push({ id: Date.now(), worker: wid, description: desc, is_completed: false, date: todayISO() });
+          showToast(`Task assigned to ${action.worker.name}! 📋`);
+        }
+      }
+
+      const feedback = currentLang === 'te-IN'
+        ? `${action.worker.name} కి పని కేటాయించబడింది.`
+        : (currentLang === 'hi-IN' ? `${action.worker.name} को काम दिया गया.` : `Task assigned to ${action.worker.name}.`);
+      speak(feedback);
+      closeModal();
+      navigate('/admin-tasks');
+      return;
+    } else if (action.type === 'BALANCE') {
+      const wid = parseInt(action.worker.id) || action.worker.id;
+      const due = STATE.getBalanceDue(wid);
+      const feedback = (currentLang === 'te-IN')
+        ? `${action.worker.name} బ్యాలెన్స్ బాకీ ${Math.round(due)} రూపాయలు.`
+        : (currentLang === 'hi-IN' ? `${action.worker.name} का बाकी बैलेंस ${Math.round(due)} रुपये है.` : `${action.worker.name}'s balance due is ₹${Math.round(due)}.`);
+      speak(feedback);
+      return;
     } else if (action.type === 'NAVIGATE') {
+      closeModal();
       navigate(action.path);
       speak(`Navigating to ${action.description}`);
+      return;
     }
   }
 

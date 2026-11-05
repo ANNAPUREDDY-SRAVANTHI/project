@@ -1,8 +1,8 @@
-﻿// ============================================================
+// ============================================================
 //  ATTENDANCE DASHBOARD
 // ============================================================
 route('/attendance-dashboard', async (el) => {
-  if (!STATE.workers.length) await refreshAll();
+  await refreshAll();
   const todayMap = STATE.todayAttendance();
   const total = STATE.workers.length;
   const present = Object.values(todayMap).filter(v => v === 'Present').length;

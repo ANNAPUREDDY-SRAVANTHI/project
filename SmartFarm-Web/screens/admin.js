@@ -1,4 +1,4 @@
-﻿// ============================================================
+// ============================================================
 //  ADMIN DASHBOARD
 // ============================================================
 route('/admin-dashboard', async (el) => {
@@ -253,7 +253,7 @@ route('/edit-worker', async (el, id) => {
 //  ADMIN TASKS SCREEN
 // ============================================================
 route('/admin-tasks', async (el) => {
-  if (!STATE.workers.length) await refreshAll();
+  await refreshAll();
   renderAdminTasks(el);
 });
 function renderAdminTasks(el) {
@@ -266,7 +266,7 @@ function renderAdminTasks(el) {
       <div class="section-title">Assign Work to Labor</div>
       ${STATE.workers.length === 0 ? `<div class="empty-state"><div class="empty-icon">👷</div><p>No workers registered yet.</p></div>` :
         STATE.workers.map(w => {
-          const latestTask = [...STATE.tasks].filter(t => t.worker === w.id).pop();
+          const latestTask = [...STATE.tasks].filter(t => String(t.worker) === String(w.id)).pop();
           const isCompleted = latestTask?.is_completed;
           const taskDesc = latestTask?.description || 'No active task';
           return `<div class="task-card">

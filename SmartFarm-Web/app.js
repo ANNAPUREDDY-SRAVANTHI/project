@@ -52,14 +52,14 @@ const STATE = {
     this.attendance.filter(r => r.date === today).forEach(r => { map[r.worker] = r.status; });
     return map;
   },
-  getPresentDaysCount(id) { return this.attendance.filter(r => r.worker === id && r.status === 'Present').length; },
+  getPresentDaysCount(id) { return this.attendance.filter(r => String(r.worker) === String(id) && r.status === 'Present').length; },
   getTotalEarned(id) {
-    const w = this.workers.find(w => w.id === id);
-    return (w ? w.daily_wage : 0) * this.getPresentDaysCount(id);
+    const w = this.workers.find(w => String(w.id) === String(id));
+    return (w ? parseFloat(w.daily_wage || 0) : 0) * this.getPresentDaysCount(id);
   },
-  getTotalPaid(id) { return this.payments.filter(p => p.worker === id).reduce((s, p) => s + parseFloat(p.amount || 0), 0); },
+  getTotalPaid(id) { return this.payments.filter(p => String(p.worker) === String(id)).reduce((s, p) => s + parseFloat(p.amount || 0), 0); },
   getBalanceDue(id) { return this.getTotalEarned(id) - this.getTotalPaid(id); },
-  getWorkerById(id) { return this.workers.find(w => w.id === id); },
+  getWorkerById(id) { return this.workers.find(w => String(w.id) === String(id)); },
 };
 
 // ── Refresh All Data ──────────────────────────────────────────

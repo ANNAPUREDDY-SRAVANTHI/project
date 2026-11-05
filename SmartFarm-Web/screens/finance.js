@@ -1,8 +1,8 @@
-﻿// ============================================================
+// ============================================================
 //  FINANCE SUMMARY SCREEN
 // ============================================================
 route('/finance', async (el) => {
-  if (!STATE.workers.length) await refreshAll();
+  await refreshAll();
   renderFinance(el);
 });
 function renderFinance(el) {
