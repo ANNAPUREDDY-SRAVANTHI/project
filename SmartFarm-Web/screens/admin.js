@@ -4,7 +4,7 @@
 route('/admin-dashboard', async (el) => {
   if (!API.isLoggedIn()) { navigate('/login'); return; }
   STATE.currentUser = API.getUser(); STATE.currentRole = 'Admin';
-  await refreshAll();
+  if (!STATE.workers.length) await refreshAll();
   renderAdminDashboard(el);
   // Auto-refresh every 15s
   if (STATE.pollInterval) clearInterval(STATE.pollInterval);

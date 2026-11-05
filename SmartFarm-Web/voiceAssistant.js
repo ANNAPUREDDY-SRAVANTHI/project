@@ -47,7 +47,11 @@ const VoiceAssistant = (() => {
   function getWorkerList() {
     return (window.STATE && Array.isArray(STATE.workers) && STATE.workers.length > 0)
       ? STATE.workers
-      : [];
+      : [
+          { id: 1, name: 'Kumar', role: 'Driver', daily_wage: 350 },
+          { id: 2, name: 'Meena', role: 'Harvester', daily_wage: 280 },
+          { id: 3, name: 'Kusuma', role: 'Field Worker', daily_wage: 300 }
+        ];
   }
 
   // Text to Speech — Mirrors Android VoiceAssistantDialog.kt lines 75-85
@@ -239,45 +243,17 @@ const VoiceAssistant = (() => {
 
     try {
       if (action.type === 'ATTENDANCE' && wid) {
-        // Immediate local state update
-        if (window.STATE && Array.isArray(STATE.attendance)) {
-          STATE.attendance = STATE.attendance.filter(r => !(String(r.worker) === String(wid) && r.date === today));
-          STATE.attendance.push({ id: Date.now(), worker: wid, date: today, status: action.status });
-        }
-        // Submit to API
-        try {
-          await API.submitAttendance({ worker: wid, date: today, status: action.status });
-        } catch (e) {
-          console.warn('API submitAttendance error:', e);
-        }
+        await API.submitAttendance({ worker: wid, date: today, status: action.status });
         await refreshAll();
         showToast('Attendance Submitted! \u2705');
       } else if (action.type === 'PAYMENT' && wid) {
-        // Immediate local state update
         const amt = parseFloat(action.amount) || 0;
-        if (window.STATE && Array.isArray(STATE.payments)) {
-          STATE.payments.push({ id: Date.now(), worker: wid, amount: amt, date: today, description: 'Salary Payment' });
-        }
-        // Submit to API
-        try {
-          await API.addPayment({ worker: wid, amount: amt });
-        } catch (e) {
-          console.warn('API addPayment error:', e);
-        }
+        await API.addPayment({ worker: wid, amount: amt });
         await refreshAll();
         showToast('Payment Recorded! \uD83D\uDCB0');
       } else if (action.type === 'TASK' && wid) {
-        // Immediate local state update
         const desc = action.taskDescription || 'General Farm Work';
-        if (window.STATE && Array.isArray(STATE.tasks)) {
-          STATE.tasks.push({ id: Date.now(), worker: wid, description: desc, is_completed: false, date: today });
-        }
-        // Submit to API
-        try {
-          await API.addTask({ worker: wid, description: desc });
-        } catch (e) {
-          console.warn('API addTask error:', e);
-        }
+        await API.addTask({ worker: wid, description: desc });
         await refreshAll();
         showToast('Task Assigned! \uD83D\uDCCB');
       } else if (action.type === 'LOGIN') {
@@ -298,14 +274,9 @@ const VoiceAssistant = (() => {
   }
 
   // Handle Speech Recognition Result — Mirrors Android lines 91-125
-  async function handleSpokenResult(spoken) {
+  function handleSpokenResult(spoken) {
     if (!spoken || !spoken.trim()) return;
     spokenText = spoken.trim();
-
-    // Ensure state is fresh from database before processing
-    if (!window.STATE || !STATE.workers.length || !STATE.attendance.length) {
-      try { await refreshAll(); } catch(e){}
-    }
 
     const workers = getWorkerList();
     parsedAction = parseMultilingualIntent(spokenText, workers, window.STATE);
@@ -492,7 +463,7 @@ const VoiceAssistant = (() => {
 
         <!-- Action Execution Button (Android Lines 288-315) -->
         ${(parsedAction.type !== 'UNKNOWN' && parsedAction.type !== 'BALANCE') ? `
-          <button id="vaConfirmBtn" style="width:100%;height:48.dp;padding:13px 0;border-radius:12px;background:#2E7D32;color:#fff;border:none;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:14px;box-shadow:0 2px 8px rgba(46,125,50,0.3);transition:background 0.2s ease;">
+          <button id="vaConfirmBtn" style="width:100%;height:48px;padding:13px 0;border-radius:12px;background:#2E7D32;color:#fff;border:none;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:14px;box-shadow:0 2px 8px rgba(46,125,50,0.3);transition:background 0.2s ease;">
             ${isExecuting ? 'Saving...' : (parsedAction.type === 'LOGIN' ? 'Login as Admin' : 'Confirm & Save')}
           </button>
         ` : ''}
@@ -562,14 +533,11 @@ ${getHelperHint(selectedLang)}
     if (manualInput) manualInput.onkeydown = (e) => { if (e.key === 'Enter') runManual(); };
   }
 
-  async function openModal() {
+  function openModal() {
     closeModal();
     spokenText = '';
     parsedAction = null;
     isExecuting = false;
-
-    // Refresh live records so calculations (like balance inquiry) always have full history
-    try { await refreshAll(); } catch (e) {}
 
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';

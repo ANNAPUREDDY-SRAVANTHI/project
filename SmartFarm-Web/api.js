@@ -3,9 +3,7 @@
 //  Mirrors: ApiService.kt + RetrofitClient.kt
 // ============================================================
 const API = (() => {
-  const BASE_URL = (typeof window !== 'undefined' && window.location && window.location.hostname && window.location.hostname !== 'localhost')
-    ? (window.location.protocol + "//" + window.location.hostname + ":8000/")
-    : "http://127.0.0.1:8000/";
+  const BASE_URL = "http://127.0.0.1:8000/";
 
   function getToken() { return localStorage.getItem("sf_token") || ""; }
   function saveToken(t) { localStorage.setItem("sf_token", t); }
@@ -15,55 +13,20 @@ const API = (() => {
   function getRole() { return localStorage.getItem("sf_role") || "Admin"; }
   function isLoggedIn() { return !!getToken(); }
 
-  async function login(username, password) {
-    const headers = { "Content-Type": "application/json" };
-    try {
-      const res = await fetch(BASE_URL + "api-token-auth/", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ username, password })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        saveToken(data.token);
-        saveUser(username, "Admin");
-        return { ok: true, data };
-      }
-    } catch (e) {
-      console.warn("Login fetch error:", e);
-    }
-    return { ok: false };
-  }
-
   async function http(method, path, body = null) {
-    let token = getToken();
-    // Auto-authenticate with admin if token is missing
-    if (!token && path !== "api-token-auth/" && path !== "api/register/") {
-      const auth = await login("admin", "admin123");
-      if (auth.ok) token = getToken();
-    }
-
     const headers = { "Content-Type": "application/json" };
+    const token = getToken();
     if (token) headers["Authorization"] = "Token " + token;
     const opts = { method, headers };
     if (body) opts.body = JSON.stringify(body);
-
-    let res;
-    try {
-      res = await fetch(BASE_URL + path, opts);
-      if (res.status === 401 && path !== "api-token-auth/") {
-        // Re-authenticate if token expired
-        const auth = await login("admin", "admin123");
-        if (auth.ok) {
-          headers["Authorization"] = "Token " + getToken();
-          res = await fetch(BASE_URL + path, opts);
-        }
-      }
-    } catch (e) {
-      console.warn("HTTP fetch error on " + path + ":", e);
-      return { ok: false, status: 500, json: async () => [], text: async () => e.message };
-    }
+    const res = await fetch(BASE_URL + path, opts);
     return res;
+  }
+
+  async function login(username, password) {
+    const res = await http("POST", "api-token-auth/", { username, password });
+    if (res.ok) { const data = await res.json(); saveToken(data.token); return { ok: true, data: data }; }
+    return { ok: false };
   }
   async function register(data) { 
     try {
@@ -85,13 +48,6 @@ const API = (() => {
   async function getAllAttendance() { try { const r = await http("GET","api/attendance/"); return r.ok ? await r.json() : []; } catch { return []; } }
   async function submitAttendance(rec) {
     try {
-      let existing = (window.STATE && Array.isArray(STATE.attendance))
-        ? STATE.attendance.find(r => String(r.worker) === String(rec.worker) && r.date === rec.date)
-        : null;
-      if (existing && existing.id) {
-        const r = await http("PUT", `api/attendance/${existing.id}/`, rec);
-        if (r.ok) return true;
-      }
       const r = await http("POST", "api/attendance/", rec);
       if (r.ok) return true;
       const fresh = await getAllAttendance();
