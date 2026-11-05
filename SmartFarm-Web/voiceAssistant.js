@@ -47,11 +47,7 @@ const VoiceAssistant = (() => {
   function getWorkerList() {
     return (window.STATE && Array.isArray(STATE.workers) && STATE.workers.length > 0)
       ? STATE.workers
-      : [
-          { id: 1, name: 'Kumar', role: 'Driver', daily_wage: 350 },
-          { id: 2, name: 'Meena', role: 'Harvester', daily_wage: 280 },
-          { id: 3, name: 'Kusuma', role: 'Field Worker', daily_wage: 300 }
-        ];
+      : [];
   }
 
   // Text to Speech — Mirrors Android VoiceAssistantDialog.kt lines 75-85
@@ -302,9 +298,14 @@ const VoiceAssistant = (() => {
   }
 
   // Handle Speech Recognition Result — Mirrors Android lines 91-125
-  function handleSpokenResult(spoken) {
+  async function handleSpokenResult(spoken) {
     if (!spoken || !spoken.trim()) return;
     spokenText = spoken.trim();
+
+    // Ensure state is fresh from database before processing
+    if (!window.STATE || !STATE.workers.length || !STATE.attendance.length) {
+      try { await refreshAll(); } catch(e){}
+    }
 
     const workers = getWorkerList();
     parsedAction = parseMultilingualIntent(spokenText, workers, window.STATE);
@@ -561,11 +562,14 @@ ${getHelperHint(selectedLang)}
     if (manualInput) manualInput.onkeydown = (e) => { if (e.key === 'Enter') runManual(); };
   }
 
-  function openModal() {
+  async function openModal() {
     closeModal();
     spokenText = '';
     parsedAction = null;
     isExecuting = false;
+
+    // Refresh live records so calculations (like balance inquiry) always have full history
+    try { await refreshAll(); } catch (e) {}
 
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
