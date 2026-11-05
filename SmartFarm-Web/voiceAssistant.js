@@ -1,715 +1,602 @@
 // ============================================================
 //  SmartFarm Web — Multilingual AI Voice Assistant
+//  Exact Web Port of Android VoiceAssistantDialog.kt
 //  Supports: English (en-IN), Telugu (te-IN), Hindi (hi-IN)
-//  Voice-to-Action: Attendance, Payments, Tasks, Balance Inquiries
 // ============================================================
 
 const VoiceAssistant = (() => {
   let recognition = null;
   let isListening = false;
-  let currentLang = 'en-IN'; // 'en-IN', 'te-IN', 'hi-IN'
-  let synth = window.speechSynthesis;
+  let selectedLang = 'en-IN'; // 'en-IN', 'te-IN', 'hi-IN'
+  let spokenText = '';
+  let parsedAction = null;
+  let isExecuting = false;
 
-  const LANG_CONFIG = {
-    'en-IN': { label: 'English', flag: '\uD83C\uDDEC\uD83C\uDDE7', hint: 'e.g. "Pay 500 to Kumar" or "Mark Meena present"' },
-    'te-IN': { label: '\u0C24\u0C46\u0C32\u0C41\u0C17\u0C41', flag: '\uD83C\uDDEE\uD83C\uDDF3', hint: '\u0C09\u0C26\u0C3E: "\u0C15\u0C41\u0C2E\u0C3E\u0C30\u0C4D \u0C15\u0C3F 500 \u0C2A\u0C47\u0C2E\u0C46\u0C02\u0C1F\u0C4D" \u0C32\u0C47\u0C26\u0C3E "\u0C2E\u0C40\u0C28\u0C3E \u0C2A\u0C4D\u0C30\u0C46\u0C38\u0C46\u0C02\u0C1F\u0C4D"' },
-    'hi-IN': { label: '\u0939\u093F\u0902\u0926\u0940', flag: '\uD83C\uDDEE\uD83C\uDDF3', hint: '\u0909\u0926\u093E: "\u0915\u0941\u092E\u093E\u0930 \u0915\u094B 500 \u0930\u0941\u092A\u092F\u0947 \u092A\u0947\u092E\u0947\u0902\u091F" \u092F\u093E "\u092E\u0940\u0928\u093E \u092A\u094D\u0930\u0947\u091C\u0947\u0902\u091F"' }
-  };
+  // Language Configurations — Mirrors Android VoiceAssistantDialog.kt lines 193-196
+  const LANGS = [
+    { code: 'en-IN', label: '\uD83C\uDDEC\uD83C\uDDE7 English', prompt: 'Tap microphone to speak' },
+    { code: 'te-IN', label: '\uD83C\uDDEE\uD83C\uDDF3 \u0C24\u0C46\u0C32\u0C41\u0C17\u0C41', prompt: '\u0C2E\u0C48\u0C15\u0C4D \u0C28\u0C4A\u0C15\u0C4D\u0C15\u0C3F \u0C24\u0C46\u0C32\u0C41\u0C17\u0C41\u0C32\u0C4B \u0C2E\u0C3E\u0C1F\u0C4D\u0C32\u0C3E\u0C21\u0C02\u0C21\u0C3F' },
+    { code: 'hi-IN', label: '\uD83C\uDDEE\uD83C\uDDF3 \u0939\u093F\u0902\u0926\u0940', prompt: '\u092E\u093E\u0907\u0915 \u0926\u092C\u093E\u090F\u0902 \u0914\u0930 \u0939\u093F\u0902\u0926\u0940 \u092E\u0947\u0902 \u092C\u094B\u0932\u0947\u0902' }
+  ];
 
-  // Common Telugu/Hindi name phonetics to match worker English names
-  const PHONETIC_MAP = {
-    'కుమార్': 'kumar', 'कुमार': 'kumar',
-    'మీనా': 'meena', 'मीना': 'meena',
-    'రమేష్': 'ramesh', 'రమేశ్': 'ramesh', 'रमेश': 'ramesh',
-    'రాజు': 'raju', 'राजू': 'raju',
-    'సునీత': 'sunita', 'सुनीता': 'sunita',
-    'లీల': 'leela', 'लीला': 'leela',
-    'కుసుమ': 'kusuma', 'कुसुमा': 'kusuma',
-    'మాబుని': 'mabuni', 'माबुनी': 'mabuni',
-    'సబీనా': 'sabina', 'सबीना': 'sabina',
-    'లత': 'latha', 'लता': 'latha',
-    'కృష్ణ': 'krishna', 'క్రిష్ణ': 'krishna', 'कृष्णा': 'krishna',
-    'రామన్న': 'ramana', 'రమణ': 'ramana', 'रमाना': 'ramana',
-    'రామ్మోహన్': 'rammohan', 'రామ్ మోహన్': 'rammohan', 'राममोहन': 'rammohan'
-  };
-
-  function init() {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      console.warn("Speech recognition is not supported in this browser.");
-      return false;
+  // Helper Hint text — Mirrors Android VoiceAssistantDialog.kt lines 319-323
+  function getHelperHint(lang) {
+    if (lang === 'te-IN') {
+      return '\uD83D\uDCA1 \u0C09\u0C26\u0C3E\u0C39\u0C30\u0C23\u0C32\u0C41:\n\u2022 \u0C15\u0C41\u0C2E\u0C3E\u0C30\u0C4D \u0C15\u0C3F 500 \u0C2A\u0C47\u0C2E\u0C46\u0C02\u0C1F\u0C4D\n\u2022 \u0C30\u0C2E\u0C47\u0C37\u0C4D \u0C2A\u0C4D\u0C30\u0C46\u0C38\u0C46\u0C02\u0C1F\u0C4D / \u0C06\u0C2C\u0C4D\u0C38\u0C46\u0C02\u0C1F\u0C4D\n\u2022 \u0C15\u0C41\u0C2E\u0C3E\u0C30\u0C4D \u0C2C\u0C4D\u0C2F\u0C3E\u0C32\u0C46\u0C28\u0C4D\u0C38\u0C4D \u0C0E\u0C02\u0C24?';
+    } else if (lang === 'hi-IN') {
+      return '\uD83D\uDCA1 \u0909\u0926\u093E\u0939\u0930\u0923:\n\u2022 \u0915\u0941\u092E\u093E\u0930 \u0915\u094B 500 \u0930\u0941\u092A\u092F\u0947 \u092A\u0947\u092E\u0947\u0902\u091F\n\u2022 \u0930\u092E\u0947\u0936 \u092A\u094D\u0930\u0947\u091C\u0947\u0902\u091F / \u0905\u0928\u0941\u092A\u0938\u094D\u0925\u093F\u0924\n\u2022 \u0915\u0941\u092E\u093E\u0930 \u0915\u093E \u092C\u0948\u0932\u0947\u0902\u0938 \u0915\u093F\u0924\u0928\u093E \u0939\u0948?';
     }
-    recognition = new SpeechRecognition();
-    recognition.continuous = false;
-    recognition.interimResults = true;
-    recognition.maxAlternatives = 1;
+    return '\uD83D\uDCA1 Examples:\n\u2022 Pay 500 to Kumar\n\u2022 Mark Ramesh present\n\u2022 Assign task Weeding to Meena';
+  }
 
-    recognition.onstart = () => {
-      setListeningState(true);
-      updateModalStatus("🎙️ Listening... Speak now!");
-    };
+  // Phonetic map — Mirrors Android VoiceAssistantDialog.kt lines 339-350
+  const PHONETIC_MAP = {
+    '\u0C15\u0C41\u0C2E\u0C3E\u0C30\u0C4D': 'kumar', '\u0915\u0941\u092E\u093E\u0930': 'kumar',
+    '\u0C2E\u0C40\u0C28\u0C3E': 'meena', '\u092E\u0940\u0928\u093E': 'meena',
+    '\u0C15\u0C41\u0C38\u0C41\u0C2E': 'kusuma', '\u0915\u0941\u0938\u0941\u092E\u093E': 'kusuma',
+    '\u0C2E\u0C3E\u0C2C\u0C41\u0C28\u0C3F': 'mabuni', '\u092E\u093E\u092C\u0941\u0928\u0940': 'mabuni',
+    '\u0C32\u0C40\u0C32': 'leela', '\u0932\u0940\u0932\u093E': 'leela',
+    '\u0C38\u0C2C\u0C40\u0C28\u0C3E': 'sabina', '\u0938\u092C\u0940\u0928\u093E': 'sabina',
+    '\u0C32\u0C24': 'latha', '\u0932\u0924\u093E': 'latha',
+    '\u0C15\u0C43\u0C37\u0C4D\u0C23': 'krishna', '\u0C15\u0C4D\u0C30\u0C3F\u0C37\u0C4D\u0C23': 'krishna', '\u0915\u0943\u0937\u094D\u0923\u093E': 'krishna',
+    '\u0C30\u0C2E\u0C23': 'ramana', '\u0930\u092E\u093E\u0928\u093E': 'ramana',
+    '\u0C30\u0C3E\u0C2E\u0C4D\u0C2E\u0C4B\u0C39\u0C28\u0C4D': 'rammohan', '\u0930\u093E\u092E\u092E\u094B\u0939\u0928': 'rammohan'
+  };
 
-    recognition.onspeechstart = () => {
-      updateModalStatus("🗣️ Hearing your voice...");
-    };
+  // Live worker helper
+  function getWorkerList() {
+    return (window.STATE && Array.isArray(STATE.workers) && STATE.workers.length > 0)
+      ? STATE.workers
+      : [
+          { id: 1, name: 'Kumar', role: 'Driver', daily_wage: 350 },
+          { id: 2, name: 'Meena', role: 'Harvester', daily_wage: 280 },
+          { id: 3, name: 'Kusuma', role: 'Field Worker', daily_wage: 300 }
+        ];
+  }
 
-    recognition.onspeechend = () => {
-      updateModalStatus("⏳ Processing speech...");
-    };
+  // Text to Speech — Mirrors Android VoiceAssistantDialog.kt lines 75-85
+  function speakFeedback(text, langCode) {
+    if (!('speechSynthesis' in window)) return;
+    try {
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = langCode || selectedLang;
+      u.rate = 0.95;
+      window.speechSynthesis.speak(u);
+    } catch (e) {
+      console.warn('TTS error:', e);
+    }
+  }
 
-    recognition.onresult = (event) => {
-      let interim = '';
-      let finalTranscript = '';
+  // Multilingual Intent Parsing Logic — Mirrors Android VoiceAssistantDialog.kt lines 335-477
+  function parseMultilingualIntent(spoken, workers, viewModel) {
+    const text = spoken.toLowerCase();
 
-      for (let i = event.resultIndex; i < event.results.length; ++i) {
-        if (event.results[i].isFinal) {
-          finalTranscript += event.results[i][0].transcript;
-        } else {
-          interim += event.results[i][0].transcript;
+    // Find worker
+    let matchedWorker = workers.find(w => text.includes(w.name.toLowerCase())) || null;
+    if (!matchedWorker) {
+      for (const [regional, eng] of Object.entries(PHONETIC_MAP)) {
+        if (spoken.includes(regional)) {
+          matchedWorker = workers.find(w => w.name.toLowerCase().includes(eng)) || null;
+          if (matchedWorker) break;
         }
       }
+    }
 
-      const text = (finalTranscript || interim).trim();
-      const transcriptEl = document.getElementById('vaTranscript');
-      if (transcriptEl && text) {
-        transcriptEl.textContent = `"${text}"`;
-        transcriptEl.style.color = '#1B5E20';
+    // Extract Amount (Regex & Digits) — Mirrors Android lines 364-372
+    const amountRegex = /\b\d+(\.\d+)?\b/;
+    const match = spoken.match(amountRegex);
+    let extractedAmount = match ? parseFloat(match[0]) : 0.0;
+    if (extractedAmount === 0.0) {
+      const wordNums = {
+        'hundred': 100.0, 'two hundred': 200.0, 'five hundred': 500.0, 'thousand': 1000.0,
+        '\u0C35\u0C02\u0C26': 100.0, '\u0C30\u0C46\u0C02\u0C21\u0C41 \u0C35\u0C02\u0C26\u0C32\u0C41': 200.0, '\u0C10\u0C26\u0C41 \u0C35\u0C02\u0C26\u0C32\u0C41': 500.0, '\u0C35\u0C47\u0C2F\u0C3F': 1000.0, '\u0C35\u0C46\u0C2F\u0C4D\u0C2F\u0C3F': 1000.0,
+        '\u0938\u094C': 100.0, '\u0926\u094B \u0938\u094C': 200.0, '\u092A\u093E\u0902\u091A \u0938\u094C': 500.0, '\u0939\u091C\u093E\u0930': 1000.0
+      };
+      for (const [k, v] of Object.entries(wordNums)) {
+        if (spoken.includes(k)) {
+          extractedAmount = v;
+          break;
+        }
       }
+    }
 
+    // 0. LOGIN — Mirrors Android lines 374-382
+    const isLogin = text.includes('login') || text.includes('\u0C32\u0C3E\u0C17\u0C3F\u0C28\u0C4D') || text.includes('\u0932\u0949\u0917\u093F\u0928') ||
+                    (text.includes('admin') && !text.includes('kumar'));
+    if (isLogin) {
+      return {
+        type: 'LOGIN',
+        displayMessage: 'Voice Command: Login as Admin'
+      };
+    }
+
+    // 1. ATTENDANCE — Mirrors Android lines 384-406
+    const absentKeywords = [
+      'absent', 'not come', "didn't come", 'leave', 'off',
+      '\u0C06\u0C2C\u0C4D\u0C38\u0C46\u0C02\u0C1F\u0C4D', '\u0C30\u0C3E\u0C32\u0C47\u0C26\u0C41', '\u0C30\u0C3E\u0C32\u0C3E', '\u0C30\u0C3E\u0C32\u0C47', '\u0C38\u0C46\u0C32\u0C35\u0C41', '\u0C21\u0C41\u0C2E\u0C4D\u0C2E\u0C3E', '\u0C17\u0C48\u0C30\u0C4D\u0C39\u0C3E\u0C1C\u0C30\u0C41', '\u0C32\u0C47\u0C21\u0C41', '\u0C32\u0C47\u0C26\u0C41',
+      '\u0905\u0928\u0941\u092A\u0938\u094D\u0925\u093F\u0924', '\u0928\u0939\u0940\u0902 \u0906\u092F\u093E', '\u0928\u0939\u0940\u0902 \u0906\u0908', '\u091B\u0941\u091F\u094D\u091F\u0940', '\u0917\u093E\u092F\u092C', '\u0928\u093E\u0917\u093E'
+    ];
+    const presentKeywords = [
+      'present', 'came', 'attended', 'at work',
+      '\u0C39\u0C3E\u0C1C\u0C30\u0C41', '\u0C2A\u0C4D\u0C30\u0C46\u0C38\u0C46\u0C02\u0C1F\u0C4D', '\u0C35\u0C1a\u0C4D\u0C1a\u0C3E\u0C21\u0C41', '\u0C35\u0C1a\u0C4D\u0C1a\u0C3F\u0C02\u0C26\u0C3F', '\u0C35\u0C1a\u0C4D\u0C1a\u0C3E\u0C30\u0C41', '\u0C09\u0C28\u0C4D\u0C28\u0C3E\u0C21\u0C41', '\u0C09\u0C02\u0C26\u0C3F', '\u0C2A\u0C28\u0C3F\u0C32\u0C4B \u0C09\u0C28\u0C4D\u0C28\u0C3E\u0C21\u0C41',
+      '\u0909\u092A\u0938\u094D\u0925\u093F\u0924', '\u0939\u093E\u091C\u093F\u0930\u0940', '\u0906\u092F\u093E', '\u0906\u0908', '\u0906\u092F\u093E \u0939\u0948', '\u0915\u093E\u092E \u092A\u0930', '\u092A\u094D\u0930\u0947\u091C\u0947\u0902\u091F'
+    ];
+
+    const isAbsentMatch = absentKeywords.some(k => text.includes(k) || spoken.includes(k));
+    const isPresentMatch = presentKeywords.some(k => text.includes(k) || spoken.includes(k));
+
+    if (isAbsentMatch || isPresentMatch) {
+      const target = matchedWorker || (workers.length > 0 ? workers[0] : null);
+      if (target) {
+        const status = isAbsentMatch ? 'Absent' : 'Present';
+        return {
+          type: 'ATTENDANCE',
+          worker: target,
+          status: status,
+          displayMessage: `Mark ${target.name} as ${status}`
+        };
+      }
+    }
+
+    // 2. PAYMENT — Mirrors Android lines 408-422
+    const paymentKeywords = [
+      'pay', 'payment', 'paid', 'gave', 'give', 'rupees', 'rs', 'salary', 'wage', 'advance',
+      '\u0C2A\u0C47\u0C2E\u0C46\u0C02\u0C1F\u0C4D', '\u0C30\u0C42\u0C2A\u0C3E\u0C2F\u0C32\u0C41', '\u0C30\u0C42\u0C2A\u0C3E\u0C2F\u0C3F', '\u0C2A\u0C48\u0C38\u0C32\u0C41', '\u0C21\u0C2C\u0C4D\u0C2C\u0C41\u0C32\u0C41', '\u0C21\u0C2C\u0C4D\u0C2C\u0C41', '\u0C1a\u0C46\u0C32\u0C4D\u0C32\u0C3F\u0C02\u0C1a\u0C41', '\u0C07\u0C1a\u0C4D\u0C1a\u0C3E\u0C28\u0C41', '\u0C07\u0C35\u0C4D\u0C35\u0C41', '\u0C15\u0C42\u0C32\u0C3F', '\u0C1C\u0C40\u0C24\u0C02', '\u0C05\u0C21\u0C4D\u0C35\u0C3E\u0C28\u0C4D\u0C38\u0C4D', '\u0C30\u0C3E\u0C38\u0C41\u0C15\u0C4B', '\u0C16\u0C3E\u0C24\u0C3E',
+      '\u092A\u0947\u092E\u0947\u0902\u091F', '\u0930\u0941\u092A\u092F\u0947', '\u0930\u0941\u092A\u092F\u093E', '\u092A\u0948\u0938\u0947', '\u0935\u0947\u0924\u0928', '\u092E\u091C\u0926\u0942\u0930\u0940', '\u0926\u0947 \u0926\u093F\u090F', '\u0926\u093F\u092F\u093E', '\u0926\u0947\u0928\u093E', '\u090F\u0921\u0935\u093E\u0902\u0938', '\u0916\u093E\u0924\u093E'
+    ];
+    const isPayment = paymentKeywords.some(k => text.includes(k) || spoken.includes(k));
+    if (isPayment && extractedAmount > 0) {
+      const target = matchedWorker || (workers.length > 0 ? workers[0] : null);
+      if (target) {
+        return {
+          type: 'PAYMENT',
+          worker: target,
+          amount: extractedAmount,
+          displayMessage: `Record payment of \u20B9${Math.round(extractedAmount)} for ${target.name}`
+        };
+      }
+    }
+
+    // 3. TASK — Mirrors Android lines 424-450
+    const taskKeywords = [
+      'task', 'assign', 'work', 'duty',
+      '\u0C2A\u0C28\u0C3F', '\u0C1F\u0C3E\u0C38\u0C4D\u0C15\u0C4D', '\u0C15\u0C47\u0C1F\u0C3E\u0C2F\u0C3F\u0C02\u0C1a\u0C41', '\u0C1a\u0C46\u0C2F\u0C4D\u0C2F\u0C2E\u0C28\u0C41', '\u0C1a\u0C46\u0C2F\u0C4D\u0C2F\u0C3E\u0C32\u0C3F', '\u0C07\u0C35\u0C4D\u0C35\u0C41',
+      '\u0915\u093E\u092E', '\u091F\u093E\u0938\u094D\u0915', '\u0938\u094C\u0902\u092A\u094B'
+    ];
+    const isTask = taskKeywords.some(k => text.includes(k) || spoken.includes(k));
+    if (isTask) {
+      const target = matchedWorker || (workers.length > 0 ? workers[0] : null);
+      if (target) {
+        let taskClean = spoken
+          .replace(new RegExp(target.name, 'gi'), '');
+        for (const reg of Object.keys(PHONETIC_MAP)) {
+          taskClean = taskClean.replace(new RegExp(reg, 'g'), '');
+        }
+        taskClean = taskClean
+          .replace(/assign task/gi, '')
+          .replace(/add task/gi, '')
+          .replace(/give task/gi, '')
+          .replace(/any of my worker/gi, '')
+          .replace(/any worker/gi, '')
+          .replace(/worker/gi, '')
+          .replace(/task/gi, '')
+          .replace(/assign/gi, '')
+          .replace(/work/gi, '')
+          .replace(/duty/gi, '')
+          .replace(/\u0C2A\u0C28\u0C3F/g, '')
+          .replace(/\u0C15\u0C47\u0C1F\u0C3E\u0C2F\u0C3F\u0C02\u0C1a\u0C41/g, '')
+          .replace(/\u0C1a\u0C46\u0C2F\u0C4D\u0C2F\u0C3E\u0C32\u0C3F/g, '')
+          .replace(/\u0C07\u0C35\u0C4D\u0C35\u0C41/g, '')
+          .replace(/\u0915\u093E\u092E/g, '')
+          .replace(/\u0938\u094C\u0902\u092A\u094B/g, '')
+          .replace(/^\s*(to|for|\u0C15\u0C3F|\u0C15\u0C4B|\u0915\u0947 \u0932\u093F\u090F)\s+/i, '')
+          .replace(/\s*(to|for|\u0C15\u0C3F|\u0C15\u0C4B|\u0915\u0947 \u0932\u093F\u090F)\s*$/i, '')
+          .trim();
+        const finalTask = taskClean.length > 2 ? taskClean : 'General Farm Work';
+        return {
+          type: 'TASK',
+          worker: target,
+          taskDescription: finalTask,
+          displayMessage: `Assign task '${finalTask}' to ${target.name}`
+        };
+      }
+    }
+
+    // 4. BALANCE INQUIRY — Mirrors Android lines 452-471
+    const balanceKeywords = [
+      'balance', 'due', 'pending', 'earned', 'owed',
+      '\u0C2C\u0C4D\u0C2F\u0C3E\u0C32\u0C46\u0C28\u0C4D\u0C38\u0C4D', '\u0C2C\u0C3E\u0C15\u0C40', '\u0C0E\u0C02\u0C24 \u0C09\u0C02\u0C26\u0C3F', '\u0C0E\u0C02\u0C24 \u0C07\u0C35\u0C4D\u0C35\u0C3E\u0C32\u0C3F', '\u0C0E\u0C02\u0C24 \u0C30\u0C3E\u0C35\u0C3E\u0C32\u0C3F', '\u0C2E\u0C3F\u0C17\u0C3F\u0C32\u0C3F\u0C02\u0C26\u0C3F', '\u0C32\u0C46\u0C15\u0C4D\u0C15',
+      '\u092C\u0948\u0932\u0947\u0902\u0938', '\u092C\u093E\u0915\u0940', '\u092C\u0915\u093E\u092F\u093E', '\u0915\u093F\u0924\u0928\u093E \u092C\u093E\u0915\u0940', '\u0915\u093F\u0924\u0928\u093E \u0926\u0947\u0928\u093E', '\u0939\u093F\u0938\u093E\u092C'
+    ];
+    const isBalance = balanceKeywords.some(k => text.includes(k) || spoken.includes(k));
+    if (isBalance) {
+      const target = matchedWorker || (workers.length > 0 ? workers[0] : null);
+      if (target) {
+        const due = window.STATE && STATE.getBalanceDue ? STATE.getBalanceDue(target.id) : 0;
+        const earned = window.STATE && STATE.getTotalEarned ? STATE.getTotalEarned(target.id) : 0;
+        const paid = window.STATE && STATE.getTotalPaid ? STATE.getTotalPaid(target.id) : 0;
+        return {
+          type: 'BALANCE',
+          worker: target,
+          displayMessage: `${target.name}'s balance due is \u20B9${Math.round(due)} (Earned: \u20B9${Math.round(earned)}, Paid: \u20B9${Math.round(paid)})`
+        };
+      }
+    }
+
+    // UNKNOWN — Mirrors Android line 474
+    return {
+      type: 'UNKNOWN',
+      displayMessage: "Try saying 'Pay 500 to Kumar' or '\u0C30\u0C2E\u0C47\u0C37\u0C4D \u0C2A\u0C4D\u0C30\u0C46\u0C38\u0C46\u0C02\u0C1F\u0C4D'"
+    };
+  }
+
+  // Execute Action — Exact Web Port of Android executeAndroidVoiceAction lines 479-505
+  async function executeAndroidVoiceAction(action, onDone) {
+    if (!action) {
+      if (onDone) onDone();
+      return;
+    }
+
+    const wid = action.worker ? (parseInt(action.worker.id) || action.worker.id) : null;
+    const today = typeof todayISO === 'function' ? todayISO() : new Date().toISOString().split('T')[0];
+
+    try {
+      if (action.type === 'ATTENDANCE' && wid) {
+        // Immediate local state update
+        if (window.STATE && Array.isArray(STATE.attendance)) {
+          STATE.attendance = STATE.attendance.filter(r => !(String(r.worker) === String(wid) && r.date === today));
+          STATE.attendance.push({ id: Date.now(), worker: wid, date: today, status: action.status });
+        }
+        // Submit to API
+        try {
+          await API.submitAttendance({ worker: wid, date: today, status: action.status });
+        } catch (e) {
+          console.warn('API submitAttendance error:', e);
+        }
+        await refreshAll();
+        showToast('Attendance Submitted! \u2705');
+      } else if (action.type === 'PAYMENT' && wid) {
+        // Immediate local state update
+        const amt = parseFloat(action.amount) || 0;
+        if (window.STATE && Array.isArray(STATE.payments)) {
+          STATE.payments.push({ id: Date.now(), worker: wid, amount: amt, date: today, description: 'Salary Payment' });
+        }
+        // Submit to API
+        try {
+          await API.addPayment({ worker: wid, amount: amt });
+        } catch (e) {
+          console.warn('API addPayment error:', e);
+        }
+        await refreshAll();
+        showToast('Payment Recorded! \uD83D\uDCB0');
+      } else if (action.type === 'TASK' && wid) {
+        // Immediate local state update
+        const desc = action.taskDescription || 'General Farm Work';
+        if (window.STATE && Array.isArray(STATE.tasks)) {
+          STATE.tasks.push({ id: Date.now(), worker: wid, description: desc, is_completed: false, date: today });
+        }
+        // Submit to API
+        try {
+          await API.addTask({ worker: wid, description: desc });
+        } catch (e) {
+          console.warn('API addTask error:', e);
+        }
+        await refreshAll();
+        showToast('Task Assigned! \uD83D\uDCCB');
+      } else if (action.type === 'LOGIN') {
+        const res = await API.login('admin', 'admin123');
+        if (res.ok) {
+          API.saveUser('admin', 'Admin');
+          showToast('Logging in as Admin... \u2705');
+          closeModal();
+          navigate('/admin-dashboard');
+          return;
+        }
+      }
+    } catch (err) {
+      console.error('executeAndroidVoiceAction catch:', err);
+    }
+
+    if (onDone) onDone();
+  }
+
+  // Handle Speech Recognition Result — Mirrors Android lines 91-125
+  function handleSpokenResult(spoken) {
+    if (!spoken || !spoken.trim()) return;
+    spokenText = spoken.trim();
+
+    const workers = getWorkerList();
+    parsedAction = parseMultilingualIntent(spokenText, workers, window.STATE);
+
+    // Speak audio feedback — Mirrors Android lines 100-123
+    if (parsedAction.type !== 'UNKNOWN') {
+      let audioMsg = parsedAction.displayMessage;
+      if (selectedLang === 'te-IN') {
+        if (parsedAction.type === 'ATTENDANCE') audioMsg = `${parsedAction.worker?.name || '\u0C35\u0C30\u0C4D\u0C15\u0C30\u0C4D'} \u0C15\u0C3F \u0C39\u0C3E\u0C1C\u0C30\u0C41 \u0C28\u0C2E\u0C4B\u0C26\u0C41 \u0C1a\u0C47\u0C2F\u0C2C\u0C21\u0C3F\u0C02\u0C26\u0C3F.`;
+        else if (parsedAction.type === 'PAYMENT') audioMsg = `${parsedAction.worker?.name || '\u0C35\u0C30\u0C4D\u0C15\u0C30\u0C4D'} \u0C15\u0C3F ${Math.round(parsedAction.amount)} \u0C30\u0C42\u0C2A\u0C3E\u0C2F\u0C32 \u0C1a\u0C46\u0C32\u0C4D\u0C32\u0C3F\u0C02\u0C2A\u0C41 \u0C30\u0C3F\u0C15\u0C3E\u0C30\u0C4D\u0C21\u0C4D \u0C05\u0C2F\u0C3F\u0C02\u0C26\u0C3F.`;
+        else if (parsedAction.type === 'TASK') audioMsg = `${parsedAction.worker?.name || '\u0C35\u0C30\u0C4D\u0C15\u0C30\u0C4D'} \u0C15\u0C3F \u0C1F\u0C3E\u0C38\u0C4D\u0C15\u0C4D \u0C15\u0C47\u0C1F\u0C3E\u0C2F\u0C3F\u0C02\u0C1a\u0C2C\u0C21\u0C3F\u0C02\u0C26\u0C3F.`;
+        else if (parsedAction.type === 'BALANCE') audioMsg = parsedAction.displayMessage;
+        else if (parsedAction.type === 'LOGIN') audioMsg = '\u0C05\u0C21\u0C4D\u0C2E\u0C3F\u0C28\u0C4D \u0C17\u0C3E \u0C32\u0C3E\u0C17\u0C3F\u0C28\u0C4D \u0C05\u0C35\u0C41\u0C24\u0C41\u0C28\u0C4D\u0C28\u0C3E\u0C30\u0C41.';
+      } else if (selectedLang === 'hi-IN') {
+        if (parsedAction.type === 'ATTENDANCE') audioMsg = `${parsedAction.worker?.name || '\u092E\u091C\u0926\u0942\u0930'} \u0915\u0940 \u0939\u093E\u091C\u093F\u0930\u0940 \u0926\u0930\u094D\u091C \u0915\u0930 \u0926\u0940 \u0917\u0908 \u0939\u0948.`;
+        else if (parsedAction.type === 'PAYMENT') audioMsg = `${parsedAction.worker?.name || '\u092E\u091C\u0926\u0942\u0930'} \u0915\u094B ${Math.round(parsedAction.amount)} \u0930\u0941\u092A\u092F\u0947 \u0915\u093E \u0921\u0941\u0917\u0924\u093E\u0928 \u0926\u0930\u094D\u091C \u0939\u0941\u0906.`;
+        else if (parsedAction.type === 'TASK') audioMsg = `${parsedAction.worker?.name || '\u092E\u091C\u0926\u0942\u0930'} \u0915\u094B \u0915\u093E\u092E \u0938\u094C\u0902\u092A\u093E \u0917\u092F\u093E.`;
+        else if (parsedAction.type === 'BALANCE') audioMsg = parsedAction.displayMessage;
+        else if (parsedAction.type === 'LOGIN') audioMsg = '\u090F\u0921\u092E\u093F\u0928 \u0915\u0947 \u0930\u0942\u092A \u092E\u0947\u0902 \u0932\u0949\u0917\u093F\u0928 \u0915\u093F\u092F\u093E \u091C\u093E \u0930\u0939\u093E \u0939\u0948.';
+      }
+      speakFeedback(audioMsg, selectedLang);
+    } else {
+      const errMsg = selectedLang === 'te-IN'
+        ? '\u0C15\u0C2E\u0C3E\u0C02\u0C21\u0C4D \u0C05\u0C30\u0C4D\u0C25\u0C02 \u0C15\u0C3E\u0C32\u0C47\u0C26\u0C41. \u0C2E\u0C33\u0C4D\u0C33\u0C40 \u0C1a\u0C46\u0C2A\u0C4D\u0C2A\u0C02\u0C21\u0C3F.'
+        : 'Command not recognized. Please try again.';
+      speakFeedback(errMsg, selectedLang);
+    }
+
+    renderModalContent();
+  }
+
+  // Speech Recognition Engine initialization
+  function initSpeechEngine() {
+    const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRec) return false;
+
+    recognition = new SpeechRec();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+
+    recognition.onresult = (e) => {
+      let finalTranscript = '';
+      for (let i = e.resultIndex; i < e.results.length; ++i) {
+        if (e.results[i].isFinal) finalTranscript += e.results[i][0].transcript;
+      }
       if (finalTranscript.trim()) {
-        handleSpeechResult(finalTranscript.trim());
+        handleSpokenResult(finalTranscript.trim());
       }
     };
 
-    recognition.onerror = (event) => {
-      console.warn("Speech Recognition Error:", event.error);
-      if (event.error === 'no-speech') {
-        updateModalStatus("\uD83D\uDC42 No speech heard. Tap the mic to speak.");
-      } else if (event.error === 'not-allowed') {
-        updateModalStatus("\uD83D\uDD12 Mic is blocked. In Chrome, click lock icon in address bar to Allow.");
-      } else if (event.error === 'audio-capture') {
-        updateModalStatus("\u26A0\uFE0F No microphone hardware found.");
-      } else if (event.error === 'network') {
-        updateModalStatus("\u26A0\uFE0F Network error contacting speech service.");
-      } else {
-        updateModalStatus(`\u2139\uFE0F Tap mic to speak (${event.error})`);
-      }
-      setListeningState(false);
+    recognition.onerror = (e) => {
+      console.warn('Speech error:', e.error);
+      isListening = false;
+      updateMicUI(false);
     };
 
     recognition.onend = () => {
-      setListeningState(false);
+      isListening = false;
+      updateMicUI(false);
     };
 
     return true;
   }
 
-  function speak(text, lang = currentLang) {
-    if (!synth) return;
-    try {
-      synth.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = lang;
-      utterance.rate = 0.95;
-      synth.speak(utterance);
-    } catch (e) {
-      console.error("TTS error:", e);
-    }
-  }
-
-  // Demo workers used when backend is offline (STATE.workers is empty)
-  const DEMO_WORKERS = [
-    { id: 'demo-1', name: 'Ramesh',  role: 'General Labor',  daily_wage: 300, _isDemo: true },
-    { id: 'demo-2', name: 'Kumar',   role: 'Irrigation',     daily_wage: 350, _isDemo: true },
-    { id: 'demo-3', name: 'Meena',   role: 'Weeding',        daily_wage: 280, _isDemo: true },
-    { id: 'demo-4', name: 'Leela',   role: 'Harvesting',     daily_wage: 320, _isDemo: true },
-    { id: 'demo-5', name: 'Raju',    role: 'Spraying',       daily_wage: 310, _isDemo: true },
-    { id: 'demo-6', name: 'Sunita',  role: 'Planting',       daily_wage: 290, _isDemo: true }
-  ];
-
-  function getWorkerList() {
-    const live = (window.STATE && Array.isArray(STATE.workers) && STATE.workers.length > 0)
-      ? STATE.workers : null;
-    // Return real workers if available, demo workers ONLY for voice name-matching
-    // NEVER overwrite STATE.workers — that would destroy real payment/attendance data
-    return live || DEMO_WORKERS;
-  }
-
-  // Find worker in STATE.workers by spoken name
-  function findWorker(spokenText) {
-    const textLower = spokenText.toLowerCase();
-    const workers = getWorkerList();
-    
-    // Check direct English matches
-    for (const w of workers) {
-      const name = w.name.toLowerCase();
-      if (textLower.includes(name)) return w;
-    }
-
-    // Check phonetic Telugu/Hindi mapping
-    for (const [regional, eng] of Object.entries(PHONETIC_MAP)) {
-      if (spokenText.includes(regional)) {
-        const found = workers.find(w => w.name.toLowerCase().includes(eng));
-        if (found) return found;
+  function startListening() {
+    if (!recognition) {
+      if (!initSpeechEngine()) {
+        alert('Speech recognition is not supported in this browser. Please use Chrome or type your command below.');
+        return;
       }
-    }
-
-    // Fallback: check parts of names
-    for (const w of workers) {
-      const parts = w.name.toLowerCase().split(' ');
-      for (const p of parts) {
-        if (p.length > 2 && textLower.includes(p)) return w;
-      }
-    }
-
-    return null;
-  }
-
-  // Extract number/amount
-  function extractAmount(text) {
-    // English/Telugu numerals extraction
-    const teluguDigits = {'౦':'0','౧':'1','౨':'2','౩':'3','౪':'4','౫':'5','౬':'6','౭':'7','౮':'8','౯':'9'};
-    const hindiDigits = {'०':'0','१':'1','२':'2','३':'3','४':'4','५':'5','६':'6','७':'7','८':'8','९':'9'};
-    
-    let normalized = text;
-    for (let [k, v] of Object.entries(teluguDigits)) normalized = normalized.replaceAll(k, v);
-    for (let [k, v] of Object.entries(hindiDigits)) normalized = normalized.replaceAll(k, v);
-
-    const match = normalized.match(/\b\d+(\.\d+)?\b/);
-    if (match) return parseFloat(match[0]);
-
-    // Spoken number words
-    const words = { 'hundred': 100, 'two hundred': 200, 'three hundred': 300, 'four hundred': 400, 'five hundred': 500, 'thousand': 1000,
-                    'వంద': 100, 'రెండు వందలు': 200, 'ఐదు వందలు': 500, 'వేయి': 1000, 'వెయ్యి': 1000,
-                    'सौ': 100, 'दो सौ': 200, 'पांच सौ': 500, 'हजार': 1000 };
-    for (let [w, num] of Object.entries(words)) {
-      if (text.includes(w)) return num;
-    }
-    return null;
-  }
-
-  // Multilingual Intent Recognition Engine
-  function parseIntent(transcript) {
-    const text = transcript.toLowerCase();
-    const worker = findWorker(transcript);
-
-    // 0. LOGIN INTENT (Works directly on Login page)
-    const isLogin = text.includes('login') || text.includes('లాగిన్') || text.includes('लॉगिन') ||
-                    (text.includes('admin') && !text.includes('kumar'));
-    if (isLogin) {
-      return {
-        type: 'LOGIN',
-        description: 'Voice Login: Log in as Admin'
-      };
-    }
-
-    // 1. ATTENDANCE INTENT (Handles diverse conversational phrasing & colloquialisms)
-    const absentKeywords = [
-      'absent', 'not come', "didn't come", 'did not come', 'on leave', 'off today',
-      'ఆబ్సెంట్', 'రాలేదు', 'రాలా', 'రాలే', 'సెలవు', 'డుమ్మా', 'గైర్హాజరు', 'లేడు', 'లేదు',
-      'अनुपस्थित', 'नहीं आया', 'नहीं आई', 'छुट्टी', 'गायब', 'नागा'
-    ];
-    const presentKeywords = [
-      'present', 'came', 'attended', 'came today', 'at work', 'is here',
-      'హాజరు', 'ప్రెసెంట్', 'వచ్చాడు', 'వచ్చింది', 'వచ్చారు', 'ఉన్నాడు', 'ఉంది', 'పనిలో ఉన్నాడు',
-      'उपस्थित', 'हाजिरी', 'आया', 'आई', 'आया है', 'काम पर है', 'प्रेजेंट'
-    ];
-
-    const isAbsentMatch = absentKeywords.some(k => text.includes(k) || transcript.includes(k));
-    const isPresentMatch = presentKeywords.some(k => text.includes(k) || transcript.includes(k));
-
-    if (isAbsentMatch || isPresentMatch) {
-      const targetWorker = worker || getWorkerList()[0];
-      if (targetWorker) {
-        const status = isAbsentMatch ? 'Absent' : 'Present';
-        return {
-          type: 'ATTENDANCE',
-          worker: targetWorker,
-          status,
-          description: `Mark ${targetWorker.name} as ${status}`
-        };
-      }
-    }
-
-    // 2. PAYMENT INTENT (Handles wages, advances, informal currency & slang like కూలి, పైసలు, मजदूरी)
-    const paymentKeywords = [
-      'pay', 'payment', 'paid', 'gave', 'give', 'rupees', 'rs', 'salary', 'wage', 'advance', 'money',
-      'పేమెంట్', 'రూపాయలు', 'రూపాయి', 'పైసలు', 'పైసల్', 'డబ్బులు', 'డబ్బు', 'చెల్లించు', 'ఇచ్చాను', 'ఇవ్వు', 'కూలి', 'జీతం', 'అడ్వాన్స్', 'రాసుకో', 'ఖాతా',
-      'पेमेंट', 'रुपये', 'रुपया', 'पैसे', 'वेतन', 'मजदूरी', 'दे दिए', 'दिया', 'देना', 'एडवांस', 'खाता'
-    ];
-    const isPayment = paymentKeywords.some(k => text.includes(k) || transcript.includes(k));
-    const amount = extractAmount(transcript);
-    if (isPayment && amount) {
-      const targetWorker = worker || getWorkerList()[0];
-      if (targetWorker) {
-        return {
-          type: 'PAYMENT',
-          worker: targetWorker,
-          amount,
-          description: `Record ₹${amount} payment for ${targetWorker.name}`
-        };
-      }
-    }
-
-    // 3. BALANCE / DUES INQUIRY (Colloquial: "బాకీ ఎంత?", "ఎంత ఇవ్వాలి?", "कितना बाकी है?")
-    const balanceKeywords = [
-      'balance', 'due', 'dues', 'pending', 'earned', 'owed', 'how much left', 'how much owe', 'account',
-      'బ్యాలెన్స్', 'బాకీ', 'ఎంత ఉంది', 'ఎంత ఇవ్వాలి', 'ఎంత రావాలి', 'మిగిలింది', 'లెక్క', 'ఎంతైంది', 'పైసలు ఎన్ని',
-      'बैलेंस', 'बाकी', 'बकाया', 'कितना हुआ', 'कितना बाकी', 'कितना देना', 'हिसाब'
-    ];
-    const isBalance = balanceKeywords.some(k => text.includes(k) || transcript.includes(k));
-    if (isBalance) {
-      const allWorkers = getWorkerList();
-      const targetWorker = worker || (allWorkers.length > 0 ? allWorkers[0] : null);
-      if (targetWorker) {
-        // Demo mode: STATE methods may not exist for demo workers
-        const isDemo = targetWorker._isDemo || !(window.STATE && STATE.getBalanceDue);
-        const due    = isDemo ? 0 : STATE.getBalanceDue(targetWorker.id);
-        const earned = isDemo ? 0 : STATE.getTotalEarned(targetWorker.id);
-        const paid   = isDemo ? 0 : STATE.getTotalPaid(targetWorker.id);
-        const descText = isDemo
-          ? `${targetWorker.name} — Demo Mode (start server for live data)`
-          : `${targetWorker.name}'s balance due is ₹${Math.round(due)} (Earned: ₹${Math.round(earned)}, Paid: ₹${Math.round(paid)})`;
-        return {
-          type: 'BALANCE',
-          worker: targetWorker,
-          due, earned, paid,
-          isDemo,
-          description: descText
-        };
-      }
-    }
-
-    // 4. TASK ASSIGNMENT INTENT
-    const taskKeywords = [
-      'task', 'assign', 'work', 'duty', 'job',
-      'పని', 'టాస్క్', 'కేటాయించు', 'చెయ్యమను', 'చెయ్యాలి', 'ఇవ్వు',
-      'काम', 'टास्क', 'सौंपो', 'जिम्मा'
-    ];
-    const isTask = taskKeywords.some(k => text.includes(k) || transcript.includes(k));
-    if (isTask) {
-      const targetWorker = worker || getWorkerList()[0];
-      if (targetWorker) {
-        let taskDesc = transcript
-          .replace(new RegExp(targetWorker.name, 'gi'), '')
-          .replace(/assign task|add task|task for|give task|task|duty|work|any worker|worker|any of my worker|పని|కేటాయించు|కామ్|काम|सौंपो/gi, '')
-          .replace(/^\s*(to|for|కి|కో|के लिए)\s+/i, '')
-          .replace(/\s*(to|for|కి|కో|के लिए)\s*$/i, '')
-          .trim();
-        if (!taskDesc || taskDesc.length < 2) taskDesc = "General Farm Work";
-        return {
-          type: 'TASK',
-          worker: targetWorker,
-          taskDesc,
-          description: `Assign task "${taskDesc}" to ${targetWorker.name}`
-        };
-      }
-    }
-
-    // 5. NAVIGATION / GENERAL COMMANDS
-    if (text.includes('worker') || text.includes('వర్కర్') || text.includes('मजदूर')) {
-      return { type: 'NAVIGATE', path: '/worker-list', description: 'Open Worker Management' };
-    }
-    if (text.includes('finance') || text.includes('ఫైనాన్స్') || text.includes('payment list')) {
-      return { type: 'NAVIGATE', path: '/finance', description: 'Open Finance Summary' };
-    }
-    if (text.includes('dashboard') || text.includes('హోమ్') || text.includes('home')) {
-      return { type: 'NAVIGATE', path: '/admin-dashboard', description: 'Go to Admin Dashboard' };
-    }
-
-    return { type: 'UNKNOWN', text: transcript, description: 'Could not recognize command.' };
-  }
-
-  // Execute Action
-  async function executeAction(action) {
-    if (!action) return;
-
-    if (action.type === 'LOGIN') {
-      const uField = document.getElementById('loginUsername');
-      const pField = document.getElementById('loginPassword');
-      if (uField && pField) {
-        uField.value = 'admin';
-        pField.value = 'admin123';
-        const submitBtn = document.querySelector('.login-card button.btn-primary');
-        if (submitBtn) submitBtn.click();
-      } else {
-        const res = await API.login('admin', 'admin123');
-        if (res.ok) {
-          API.saveUser('admin', 'Admin');
-          navigate('/admin-dashboard');
-        }
-      }
-      const feedback = currentLang === 'te-IN' 
-        ? "అడ్మిన్ గా లాగిన్ అవుతున్నారు." 
-        : (currentLang === 'hi-IN' ? "एडमिन के रूप में लॉगिन हो रहा है." : "Logging in as Admin.");
-      speak(feedback);
-      return;
-    }
-
-    if (action.type === 'ATTENDANCE') {
-      const wid = parseInt(action.worker.id) || action.worker.id;
-      const today = todayISO();
-      const status = action.status || 'Present';
-      const isDemo = !!action.worker._isDemo;
-
-      // 1. Immediately update in-memory attendance
-      STATE.attendance = STATE.attendance.filter(r => !(String(r.worker) === String(wid) && r.date === today));
-      STATE.attendance.push({ id: Date.now(), worker: wid, date: today, status: status });
-
-      // 2. Persist to backend
-      if (!isDemo) {
-        try {
-          await API.submitAttendance({ worker: wid, date: today, status: status });
-        } catch (e) {
-          console.warn('Attendance save error:', e);
-        }
-      }
-      try { await refreshAll(); } catch(e){}
-
-      // 3. Ensure record is preserved in local state
-      if (!STATE.attendance.some(r => String(r.worker) === String(wid) && r.date === today && r.status === status)) {
-        STATE.attendance.push({ id: Date.now(), worker: wid, date: today, status: status });
-      }
-
-      showToast(`Attendance Marked: ${action.worker.name} (${status}) \u2705`);
-
-      const feedback = currentLang === 'te-IN'
-        ? `${action.worker.name} కి హాజరు ${status === 'Present' ? 'ప్రెసెంట్' : 'ఆబ్సెంట్'} గా నమోదు చేయబడింది.`
-        : (currentLang === 'hi-IN' ? `${action.worker.name} की हाजिरी दर्ज हो गई है.` : `Marked ${action.worker.name} as ${status}.`);
-      speak(feedback);
-      closeModal();
-      navigate('/attendance-dashboard');
-      renderRoute();
-      return;
-    } else if (action.type === 'PAYMENT') {
-      const wid = parseInt(action.worker.id) || action.worker.id;
-      const amt = parseFloat(action.amount);
-      const isDemo = !!action.worker._isDemo;
-
-      // 1. Immediately update in-memory payments
-      const localPay = { id: Date.now(), worker: wid, amount: amt, date: todayISO() };
-      STATE.payments.push(localPay);
-
-      // 2. Persist to backend
-      if (!isDemo) {
-        try {
-          await API.addPayment({ worker: wid, amount: amt });
-        } catch (e) {
-          console.warn('Payment save error:', e);
-        }
-      }
-      try { await refreshAll(); } catch(e){}
-
-      // 3. Ensure record is preserved in local state
-      if (!STATE.payments.some(p => String(p.worker) === String(wid) && parseFloat(p.amount) === amt && p.date === todayISO())) {
-        STATE.payments.push(localPay);
-      }
-
-      showToast(`Payment of ₹${amt} recorded for ${action.worker.name}! \uD83D\uDCB0`);
-
-      const feedback = currentLang === 'te-IN'
-        ? `${action.worker.name} కి ${amt} రూపాయల చెల్లింపు నమోదు చేయబడింది.`
-        : (currentLang === 'hi-IN' ? `${action.worker.name} को ${amt} रुपये का भुगतान दर्ज हुआ.` : `Recorded payment of ₹${amt} for ${action.worker.name}.`);
-      speak(feedback);
-      closeModal();
-      navigate('/finance');
-      renderRoute();
-      return;
-    } else if (action.type === 'TASK') {
-      const wid = parseInt(action.worker.id) || action.worker.id;
-      const desc = action.taskDesc || 'General Farm Work';
-      const isDemo = !!action.worker._isDemo;
-
-      // 1. Immediately update in-memory tasks
-      const localTask = { id: Date.now(), worker: wid, description: desc, is_completed: false, date: todayISO() };
-      STATE.tasks.push(localTask);
-
-      // 2. Persist to backend
-      if (!isDemo) {
-        try {
-          await API.addTask({ worker: wid, description: desc });
-        } catch (e) {
-          console.warn('Task save error:', e);
-        }
-      }
-      try { await refreshAll(); } catch(e){}
-
-      // 3. Ensure record is preserved in local state
-      if (!STATE.tasks.some(t => String(t.worker) === String(wid) && t.description === desc)) {
-        STATE.tasks.push(localTask);
-      }
-
-      showToast(`Task assigned to ${action.worker.name}! \uD83D\uDCCB`);
-
-      const feedback = currentLang === 'te-IN'
-        ? `${action.worker.name} కి పని కేటాయించబడింది.`
-        : (currentLang === 'hi-IN' ? `${action.worker.name} को काम दिया गया.` : `Task assigned to ${action.worker.name}.`);
-      speak(feedback);
-      closeModal();
-      navigate('/admin-tasks');
-      renderRoute();
-      return;
-    } else if (action.type === 'BALANCE') {
-      const wid = parseInt(action.worker.id) || action.worker.id;
-      const due = STATE.getBalanceDue(wid);
-      const feedback = (currentLang === 'te-IN')
-        ? `${action.worker.name} బ్యాలెన్స్ బాకీ ${Math.round(due)} రూపాయలు.`
-        : (currentLang === 'hi-IN' ? `${action.worker.name} का बाकी बैलेंस ${Math.round(due)} रुपये है.` : `${action.worker.name}'s balance due is ₹${Math.round(due)}.`);
-      speak(feedback);
-      return;
-    } else if (action.type === 'NAVIGATE') {
-      closeModal();
-      navigate(action.path);
-      speak(`Navigating to ${action.description}`);
-      return;
-    }
-  }
-
-  // Handle Speech Transcript Result — mirrors Android VoiceAssistantDialog
-  function handleSpeechResult(transcript) {
-    const transcriptEl = document.getElementById('vaTranscript');
-    const resultCardEl = document.getElementById('vaResultCard');
-    let   executeBtn   = document.getElementById('vaExecuteBtn');
-
-    if (transcriptEl) {
-      transcriptEl.textContent = `"${transcript}"`;
-      transcriptEl.style.color = '#1B5E20';
-    }
-
-    const action = parseIntent(transcript);
-    if (!resultCardEl) return;
-
-    if (action.type === 'UNKNOWN') {
-      resultCardEl.innerHTML = `
-        <div style="color:var(--orange);font-weight:600;font-size:14px">⚠️ Command not recognized.</div>
-        <div style="font-size:12px;color:var(--gray-text);margin-top:6px">
-          Try: <b>"Mark Ramesh present"</b>, <b>"Pay 500 to Kumar"</b> or <b>"Meena absent"</b>
-        </div>`;
-      if (executeBtn) executeBtn.style.display = 'none';
-      const errMsg = currentLang === 'te-IN'
-        ? 'కమాండ్ అర్థం కాలేదు. మళ్ళీ చెప్పండి.'
-        : (currentLang === 'hi-IN' ? 'कमांड समझ नहीं आई. फिर बोलिए.' : 'Command not recognized. Please try again.');
-      speak(errMsg);
-    } else {
-      const badgeColor = action.type === 'ATTENDANCE' ? '#1565C0'
-                       : action.type === 'PAYMENT'    ? '#2E7D32'
-                       : action.type === 'TASK'       ? '#E65100' : '#6A1B9A';
-      resultCardEl.innerHTML = `
-        <div style="font-size:11px;font-weight:700;color:${badgeColor};text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">
-          ⚡ Action Detected (${action.type})
-        </div>
-        <div style="font-size:15px;font-weight:700;color:#1B5E20;line-height:1.4">
-          ${action.description}
-        </div>`;
-
-      // Speak confirmation feedback
-      let msg = action.description;
-      if (currentLang === 'te-IN') {
-        if (action.type === 'ATTENDANCE') msg = `${action.worker?.name} కి హాజరు ${action.status === 'Present' ? 'ప్రెసెంట్' : 'ఆబ్సెంట్'} గా నమోదు చేయబడింది.`;
-        else if (action.type === 'PAYMENT') msg = `${action.worker?.name} కి ${action.amount} రూపాయల చెల్లింపు రికార్డ్ అయింది.`;
-        else if (action.type === 'TASK')    msg = `${action.worker?.name} కి టాస్క్ కేటాయించబడింది.`;
-      } else if (currentLang === 'hi-IN') {
-        if (action.type === 'ATTENDANCE') msg = `${action.worker?.name} की हाजिरी दर्ज कर दी गई है.`;
-        else if (action.type === 'PAYMENT') msg = `${action.worker?.name} को ${action.amount} रुपये का भुगतान दर्ज हुआ.`;
-        else if (action.type === 'TASK')    msg = `${action.worker?.name} को काम सौंपा गया.`;
-      }
-      speak(msg);
-
-      if (executeBtn && action.type !== 'BALANCE' && action.type !== 'UNKNOWN') {
-        executeBtn.textContent = 'Updating data...';
-        executeBtn.style.cssText = 'display:block;width:100%;padding:14px 0;border-radius:12px;background:#2E7D32;color:#fff;border:none;font-weight:700;font-size:15px;margin-bottom:4px;';
-        executeBtn.disabled = true;
-      }
-
-      // Immediately execute action and update data
-      setTimeout(async () => {
-        await executeAction(action);
-      }, 350);
-    }
-  }
-
-  function setListeningState(listening) {
-    isListening = listening;
-    const micBtn = document.getElementById('vaMicBtn');
-    const statusText = document.getElementById('vaStatusText');
-    if (micBtn) {
-      micBtn.classList.toggle('listening', listening);
-    }
-    if (statusText) {
-      statusText.textContent = listening 
-        ? `Listening in ${LANG_CONFIG[currentLang].label}... Speak now!`
-        : 'Tap microphone to speak';
-    }
-  }
-
-  function updateModalStatus(msg) {
-    const statusText = document.getElementById('vaStatusText');
-    if (statusText) statusText.textContent = msg;
-  }
-
-  function toggleListening() {
-    if (!recognition && !init()) {
-      alert("Speech recognition is not supported in this browser. Please use Google Chrome or Edge.");
-      return;
-    }
-
-    if (isListening) {
-      if (recognition) {
-        try { recognition.stop(); } catch(e){}
-      }
-      setListeningState(false);
-      return;
     }
 
     try {
-      recognition.lang = currentLang;
+      recognition.lang = selectedLang;
       recognition.start();
-      setListeningState(true);
-      const transcriptEl = document.getElementById('vaTranscript');
-      if (transcriptEl) {
-        transcriptEl.textContent = 'Listening... Speak now!';
-        transcriptEl.style.color = '#2E7D32';
-      }
-      updateModalStatus("\uD83C\uDF99\uFE0F Listening... Speak now!");
-      const resultCardEl = document.getElementById('vaResultCard');
-      if (resultCardEl) resultCardEl.innerHTML = `<div style="font-size:11px;color:var(--gray-text)">&#128161; ${LANG_CONFIG[currentLang].hint}</div>`;
-      const executeBtn = document.getElementById('vaExecuteBtn');
-      if (executeBtn) executeBtn.style.display = 'none';
+      isListening = true;
+      updateMicUI(true);
     } catch (err) {
-      console.warn("Recognition start catch:", err);
       if (err.name === 'InvalidStateError') {
         try { recognition.stop(); } catch(e){}
         setTimeout(() => {
           try {
-            recognition.lang = currentLang;
+            recognition.lang = selectedLang;
             recognition.start();
-            setListeningState(true);
+            isListening = true;
+            updateMicUI(true);
           } catch(e){}
         }, 150);
       } else {
-        setListeningState(false);
+        isListening = false;
+        updateMicUI(false);
       }
     }
   }
 
-  function openModal() {
-    closeModal();
+  function stopListening() {
+    if (recognition && isListening) {
+      try { recognition.stop(); } catch(e){}
+    }
+    isListening = false;
+    updateMicUI(false);
+  }
 
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay';
-    overlay.id = 'voiceAssistantModal';
-    overlay.innerHTML = `
-      <div class="modal" style="max-width:390px;text-align:center;padding:24px 20px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-          <div style="display:flex;align-items:center;gap:8px;">
-            <span style="font-size:22px">&#127908;</span>
-            <div style="font-weight:800;font-size:17px;color:var(--green-dark)">AI Voice Assistant</div>
-          </div>
-          <button id="vaCloseBtn" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--gray-text)">&times;</button>
-        </div>
+  function updateMicUI(listening) {
+    const micBtn = document.getElementById('vaMicBtn');
+    if (micBtn) {
+      micBtn.style.transform = listening ? 'scale(1.08)' : 'scale(1)';
+      micBtn.style.boxShadow = listening
+        ? '0 0 0 10px rgba(46,125,50,0.25), 0 6px 16px rgba(46,125,50,0.5)'
+        : '0 4px 12px rgba(46,125,50,0.35)';
+    }
+    const statusText = document.getElementById('vaStatusText');
+    if (statusText) {
+      const cfg = LANGS.find(l => l.code === selectedLang) || LANGS[0];
+      statusText.textContent = listening ? 'Listening... Speak now!' : cfg.prompt;
+      statusText.style.color = listening ? '#1B5E20' : '#2E7D32';
+    }
+  }
 
-        <!-- Language Switcher -->
-        <div style="display:flex;gap:6px;justify-content:center;margin-bottom:16px;">
-          ${Object.entries(LANG_CONFIG).map(([code, cfg]) => `
-            <button class="va-lang-btn ${code === currentLang ? 'active' : ''}" data-lang="${code}" style="padding:6px 12px;border-radius:20px;border:1.5px solid var(--green-primary);background:${code === currentLang ? 'var(--green-primary)' : 'transparent'};color:${code === currentLang ? '#fff' : 'var(--green-primary)'};font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:4px;">
-              <span>${cfg.flag}</span> <span>${cfg.label}</span>
-            </button>
-          `).join('')}
-        </div>
+  // Render Dialog Content — Exact replica of Android VoiceAssistantDialog.kt UI
+  function renderModalContent() {
+    const modalEl = document.getElementById('vaModalCard');
+    if (!modalEl) return;
 
-        <!-- Animated Mic Button -->
-        <div style="position:relative;margin:16px auto 12px;width:80px;height:80px;display:flex;align-items:center;justify-content:center;">
-          <button id="vaMicBtn" class="va-mic-circle" title="Click to Speak / Stop">
-            <svg viewBox="0 0 24 24" fill="currentColor" style="width:36px;height:36px">
+    const currentLangCfg = LANGS.find(l => l.code === selectedLang) || LANGS[0];
+
+    modalEl.innerHTML = `
+      <!-- Header (Android Lines 165-185) -->
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div style="width:36px;height:36px;border-radius:50%;background:#E8F5E9;display:flex;align-items:center;justify-content:center;">
+            <svg viewBox="0 0 24 24" fill="#2E7D32" style="width:20px;height:20px;">
               <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5-3c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
             </svg>
-          </button>
+          </div>
+          <span style="font-size:18px;font-weight:700;color:#1B5E20;">AI Voice Assistant</span>
         </div>
+        <button id="vaCloseBtn" style="background:none;border:none;font-size:24px;cursor:pointer;color:#888;padding:4px 8px;line-height:1;">&times;</button>
+      </div>
 
-        <div id="vaStatusText" style="font-size:13px;font-weight:600;color:var(--green-primary);margin-bottom:12px;">
-          Tap microphone above to speak
-        </div>
+      <!-- Language Selector Chips (Android Lines 188-214) -->
+      <div style="display:flex;gap:8px;justify-content:center;margin-bottom:16px;">
+        ${LANGS.map(l => {
+          const isSel = selectedLang === l.code;
+          return `
+            <button class="va-lang-chip" data-code="${l.code}" style="padding:6px 14px;border-radius:16px;border:none;background:${isSel ? '#2E7D32' : '#F1F8E9'};color:${isSel ? '#fff' : '#2E7D32'};font-size:12px;font-weight:700;cursor:pointer;transition:all 0.15s ease;">
+              ${l.label}
+            </button>
+          `;
+        }).join('')}
+      </div>
 
-        <!-- Live Transcript Display -->
-        <div id="vaTranscript" style="min-height:42px;padding:10px 14px;background:#f5f8f5;border-radius:12px;font-size:14px;font-style:italic;color:#333;margin-bottom:12px;border:1.5px dashed #c8e6c9;display:flex;align-items:center;justify-content:center;word-break:break-word;">
-          "Tap mic and speak a command..."
-        </div>
-
-        <!-- Result Action Preview -->
-        <div id="vaResultCard" style="min-height:50px;padding:10px;background:#ffffff;border-radius:12px;border:1px solid #e0e0e0;margin-bottom:12px;text-align:left;">
-          <div style="font-size:11px;color:var(--gray-text)">&#128161; ${LANG_CONFIG[currentLang].hint}</div>
-        </div>
-
-        <button id="vaExecuteBtn" class="btn btn-primary" style="display:none;width:100%;margin-bottom:12px;">
-          Confirm Action
+      <!-- Big Mic Tap Button (Android Lines 217-228) -->
+      <div style="margin:8px auto 10px;display:flex;justify-content:center;">
+        <button id="vaMicBtn" style="width:76px;height:76px;border-radius:50%;background:#2E7D32;border:none;box-shadow:0 4px 12px rgba(46,125,50,0.35);cursor:pointer;display:flex;align-items:center;justify-content:center;color:#fff;transition:all 0.2s ease;">
+          <svg viewBox="0 0 24 24" fill="currentColor" style="width:38px;height:38px;">
+            <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5-3c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+          </svg>
         </button>
+      </div>
 
-        <!-- Fallback Manual Input (Type or Speak) -->
-        <div style="border-top:1px solid #edf2ed;padding-top:10px;display:flex;gap:6px;align-items:center;">
-          <input id="vaManualInput" type="text" placeholder="Or type voice command here..." style="flex:1;padding:8px 12px;border:1px solid #c8e6c9;border-radius:10px;font-size:12px;outline:none;background:#fafdfa;"/>
-          <button id="vaManualSubmitBtn" class="btn btn-primary" style="padding:8px 14px;border-radius:10px;font-size:12px;white-space:nowrap;">Go</button>
+      <!-- Prompt Text (Android Lines 230-239) -->
+      <div id="vaStatusText" style="font-size:13px;font-weight:600;color:#2E7D32;margin-bottom:14px;">
+        ${currentLangCfg.prompt}
+      </div>
+
+      <!-- Spoken Transcript Card (Android Lines 242-258) -->
+      ${spokenText ? `
+        <div style="background:#F9FBF9;border:1px solid #C8E6C9;border-radius:12px;padding:12px;margin-bottom:12px;font-size:14px;color:#333;text-align:center;">
+          "${spokenText}"
         </div>
-      </div>`;
+      ` : ''}
 
-    document.body.appendChild(overlay);
+      <!-- Action Result Preview Card (Android Lines 261-285) -->
+      ${parsedAction ? `
+        <div style="background:${parsedAction.type === 'UNKNOWN' ? '#FFF3E0' : '#E8F5E9'};border:1px solid ${parsedAction.type === 'UNKNOWN' ? '#FFB74D' : '#81C784'};border-radius:12px;padding:12px;margin-bottom:14px;text-align:left;">
+          <div style="font-size:11px;font-weight:700;color:${parsedAction.type === 'UNKNOWN' ? '#E65100' : '#1B5E20'};margin-bottom:4px;">
+            ${parsedAction.type === 'UNKNOWN' ? '⚠️ Command Not Recognized' : '⚡ Action Detected (' + parsedAction.type + ')'}
+          </div>
+          <div style="font-size:14px;font-weight:700;color:#000;">
+            ${parsedAction.displayMessage}
+          </div>
+        </div>
 
-    // Event Listeners
-    overlay.querySelector('#vaCloseBtn').onclick = closeModal;
-    overlay.onclick = (e) => { if (e.target === overlay) closeModal(); };
+        <!-- Action Execution Button (Android Lines 288-315) -->
+        ${(parsedAction.type !== 'UNKNOWN' && parsedAction.type !== 'BALANCE') ? `
+          <button id="vaConfirmBtn" style="width:100%;height:48.dp;padding:13px 0;border-radius:12px;background:#2E7D32;color:#fff;border:none;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:14px;box-shadow:0 2px 8px rgba(46,125,50,0.3);transition:background 0.2s ease;">
+            ${isExecuting ? 'Saving...' : (parsedAction.type === 'LOGIN' ? 'Login as Admin' : 'Confirm & Save')}
+          </button>
+        ` : ''}
+      ` : ''}
 
-    overlay.querySelector('#vaMicBtn').onclick = toggleListening;
+      <!-- Helper Hint Card (Android Lines 318-328) -->
+      <div style="font-size:11px;color:#666;text-align:left;white-space:pre-line;line-height:1.5;background:#fbfbfb;border-radius:10px;padding:10px;border:1px solid #eee;margin-bottom:12px;">
+${getHelperHint(selectedLang)}
+      </div>
 
-    // Manual input submit
-    const manualInp = overlay.querySelector('#vaManualInput');
-    const manualBtn = overlay.querySelector('#vaManualSubmitBtn');
-    const runManual = () => {
-      const val = manualInp.value.trim();
-      if (val) {
-        const transcriptEl = document.getElementById('vaTranscript');
-        if (transcriptEl) transcriptEl.textContent = `"${val}"`;
-        handleSpeechResult(val);
-      }
-    };
-    manualBtn.onclick = runManual;
-    manualInp.onkeydown = (e) => { if (e.key === 'Enter') runManual(); };
+      <!-- Fallback Manual Input -->
+      <div style="border-top:1px solid #edf2ed;padding-top:10px;display:flex;gap:6px;align-items:center;">
+        <input id="vaManualInput" type="text" placeholder="Or type voice command here..." style="flex:1;padding:8px 12px;border:1px solid #c8e6c9;border-radius:10px;font-size:12px;outline:none;background:#fafdfa;"/>
+        <button id="vaManualSubmitBtn" style="padding:8px 14px;border-radius:10px;font-size:12px;background:#2E7D32;color:#fff;border:none;font-weight:700;cursor:pointer;">Go</button>
+      </div>
+    `;
 
-    overlay.querySelectorAll('.va-lang-btn').forEach(btn => {
+    // Hook listeners
+    modalEl.querySelector('#vaCloseBtn').onclick = closeModal;
+
+    modalEl.querySelectorAll('.va-lang-chip').forEach(btn => {
       btn.onclick = () => {
-        currentLang = btn.getAttribute('data-lang');
-        overlay.querySelectorAll('.va-lang-btn').forEach(b => {
-          const isAct = b.getAttribute('data-lang') === currentLang;
-          b.style.background = isAct ? 'var(--green-primary)' : 'transparent';
-          b.style.color = isAct ? '#fff' : 'var(--green-primary)';
-        });
-        const resCard = document.getElementById('vaResultCard');
-        if (resCard) resCard.innerHTML = `<div style="font-size:11px;color:var(--gray-text)">💡 ${LANG_CONFIG[currentLang].hint}</div>`;
+        selectedLang = btn.getAttribute('data-code');
+        renderModalContent();
         if (isListening) {
-          recognition.stop();
-          setTimeout(toggleListening, 200);
+          stopListening();
+          setTimeout(startListening, 200);
         }
       };
     });
 
-    // Ready to listen on tap
-    setListeningState(false);
+    const micBtn = modalEl.querySelector('#vaMicBtn');
+    if (micBtn) {
+      micBtn.onclick = () => {
+        if (isListening) stopListening();
+        else startListening();
+      };
+    }
+
+    const confirmBtn = modalEl.querySelector('#vaConfirmBtn');
+    if (confirmBtn) {
+      confirmBtn.onclick = async () => {
+        if (isExecuting) return;
+        isExecuting = true;
+        confirmBtn.textContent = 'Saving...';
+        confirmBtn.disabled = true;
+
+        await executeAndroidVoiceAction(parsedAction, () => {
+          isExecuting = false;
+          closeModal();
+          // Navigate to appropriate screen so user sees update immediately
+          if (parsedAction.type === 'ATTENDANCE') navigate('/attendance-dashboard');
+          else if (parsedAction.type === 'PAYMENT') navigate('/finance');
+          else if (parsedAction.type === 'TASK') navigate('/admin-tasks');
+          else renderRoute();
+        });
+      };
+    }
+
+    const manualInput = modalEl.querySelector('#vaManualInput');
+    const manualBtn = modalEl.querySelector('#vaManualSubmitBtn');
+    const runManual = () => {
+      const val = manualInput.value.trim();
+      if (val) handleSpokenResult(val);
+    };
+    if (manualBtn) manualBtn.onclick = runManual;
+    if (manualInput) manualInput.onkeydown = (e) => { if (e.key === 'Enter') runManual(); };
+  }
+
+  function openModal() {
+    closeModal();
+    spokenText = '';
+    parsedAction = null;
+    isExecuting = false;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.id = 'voiceAssistantModal';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px;';
+
+    const card = document.createElement('div');
+    card.id = 'vaModalCard';
+    card.style.cssText = 'background:#fff;border-radius:24px;max-width:390px;width:100%;padding:20px;box-shadow:0 8px 30px rgba(0,0,0,0.25);text-align:center;box-sizing:border-box;';
+
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+
+    overlay.onclick = (e) => { if (e.target === overlay) closeModal(); };
+
+    renderModalContent();
   }
 
   function closeModal() {
-    if (recognition && isListening) {
-      try { recognition.stop(); } catch (e) {}
-    }
-    setListeningState(false);
+    stopListening();
     const existing = document.getElementById('voiceAssistantModal');
     if (existing) existing.remove();
   }
 
-  // Inject Floating Mic Button on screens
+  // Floating Mic Button — Accessible across all screens
   function renderFloatingButton() {
     if (document.getElementById('vaFloatingBtn')) return;
     const btn = document.createElement('button');
     btn.id = 'vaFloatingBtn';
     btn.className = 'va-floating-btn';
-    btn.setAttribute('title', 'AI Voice Assistant (తెలుగు / Hindi / English)');
+    btn.setAttribute('title', 'AI Voice Assistant (English / \u0C24\u0C46\u0C32\u0C41\u0C17\u0C41 / \u0939\u093F\u0902\u0926\u0940)');
     btn.setAttribute('aria-label', 'AI Voice Assistant');
     btn.innerHTML = `
       <svg viewBox="0 0 24 24" fill="currentColor" style="width:28px;height:28px">
@@ -720,7 +607,19 @@ const VoiceAssistant = (() => {
     document.body.appendChild(btn);
   }
 
-  const exported = { init, openModal, closeModal, renderFloatingButton, parseIntent, executeAction };
+  function init() {
+    initSpeechEngine();
+  }
+
+  const exported = {
+    init,
+    openModal,
+    closeModal,
+    renderFloatingButton,
+    parseMultilingualIntent,
+    executeAndroidVoiceAction
+  };
+
   window.VoiceAssistant = exported;
   return exported;
 })();
@@ -745,4 +644,3 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   }, 200);
 });
-
