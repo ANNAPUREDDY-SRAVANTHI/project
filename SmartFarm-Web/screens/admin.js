@@ -54,6 +54,14 @@ function renderAdminDashboard(el) {
         </div>
         <div class="action-chevron">${ICONS.chevron}</div>
       </button>
+      <button class="action-card" onclick="navigate('/ai-optimizer')">
+        <div class="action-icon-wrap" style="background:#E8F5E9;color:#2E7D32">${ICONS.sparkle}</div>
+        <div class="action-text">
+          <div class="action-title">AI Workforce Optimizer</div>
+          <div class="action-desc">Smart scheduling & labor analytics</div>
+        </div>
+        <div class="action-chevron">${ICONS.chevron}</div>
+      </button>
       <button class="action-card" onclick="navigate('/admin-tasks')">
         <div class="action-icon-wrap">${ICONS.assignment}</div>
         <div class="action-text">
