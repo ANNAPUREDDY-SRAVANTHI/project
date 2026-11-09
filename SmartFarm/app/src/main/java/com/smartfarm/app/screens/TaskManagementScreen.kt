@@ -27,7 +27,7 @@ fun TaskManagementScreen(navController: NavController, viewModel: WorkerViewMode
     val loggedInPhone by viewModel.currentUsername.collectAsState()
     val context = LocalContext.current
 
-    val currentWorker = workers.find { it.phone == loggedInPhone }
+    val currentWorker = remember(workers, loggedInPhone) { viewModel.findWorkerForUser(loggedInPhone) }
     val myTask = tasks.find { it.worker == (currentWorker?.id ?: -1) }
 
     Scaffold(

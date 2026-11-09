@@ -29,9 +29,10 @@ fun WorkerProfileScreen(navController: NavController, viewModel: WorkerViewModel
     // 1. Observe real-time worker data
     val workers by viewModel.allWorkers.collectAsState(initial = emptyList())
 
-    // --- THE FIX: Find the logged-in worker by phone number ---
+    // --- Find the logged-in worker by phone or name (robust matching) ---
     val loggedInPhone by viewModel.currentUsername.collectAsState()
-    val worker = workers.find { it.phone == loggedInPhone }
+    val worker = remember(workers, loggedInPhone) { viewModel.findWorkerForUser(loggedInPhone) }
+    val displayName = remember(worker, loggedInPhone) { viewModel.getWorkerDisplayName(worker, loggedInPhone) }
 
     Scaffold(
         topBar = {
@@ -93,14 +94,14 @@ fun WorkerProfileScreen(navController: NavController, viewModel: WorkerViewModel
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = worker?.name?.firstOrNull()?.toString() ?: "?",
+                        text = displayName.firstOrNull()?.toString()?.uppercase() ?: "W",
                         fontSize = 48.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF1B5E20)
                     )
                 }
                 Text(
-                    text = worker?.name ?: "Worker Name",
+                    text = displayName,
                     fontSize = 22.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF1B5E20)

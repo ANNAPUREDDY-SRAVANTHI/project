@@ -1,6 +1,54 @@
-﻿// ============================================================
-//  WORKER DASHBOARD
 // ============================================================
+//  WORKER DASHBOARD & SCREENS
+// ============================================================
+
+// Robust worker finder matching phone (exact/digits), exact name, word in name, or contains
+function findCurrentWorker(loggedUser) {
+  if (!loggedUser) return null;
+  const clean = String(loggedUser).trim();
+  const cleanLower = clean.toLowerCase();
+  const cleanDigits = clean.replace(/\D/g, '');
+
+  // 1. Direct phone match or digit suffix match (ignores +91, 0, or spaces)
+  const byPhone = STATE.workers.find(w => {
+    const wPhone = String(w.phone || '').trim();
+    const wDigits = wPhone.replace(/\D/g, '');
+    return wPhone.toLowerCase() === cleanLower ||
+      (cleanDigits.length >= 5 && wDigits.endsWith(cleanDigits)) ||
+      (wDigits.length >= 5 && cleanDigits.endsWith(wDigits));
+  });
+  if (byPhone) return byPhone;
+
+  // 2. Exact name match (case-insensitive & trimmed)
+  const byExactName = STATE.workers.find(w => String(w.name || '').trim().toLowerCase() === cleanLower);
+  if (byExactName) return byExactName;
+
+  // 3. Word match (e.g. worker is "Ramesh Kumar" or "Kumar S", user logged in as "kumar")
+  const byWord = STATE.workers.find(w => {
+    const words = String(w.name || '').trim().toLowerCase().split(/\s+/);
+    return words.includes(cleanLower);
+  });
+  if (byWord) return byWord;
+
+  // 4. Substring contains match (either direction)
+  const byContains = STATE.workers.find(w => {
+    const wName = String(w.name || '').trim().toLowerCase();
+    return wName.includes(cleanLower) || cleanLower.includes(wName);
+  });
+  return byContains || null;
+}
+
+function getWorkerDisplayName(worker, loggedUser) {
+  if (worker && worker.name && worker.name.trim()) {
+    return worker.name.trim();
+  }
+  const clean = String(loggedUser || '').trim();
+  if (clean) {
+    return clean.split(/\s+/).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+  }
+  return 'Worker';
+}
+
 route('/worker-dashboard', async (el) => {
   if (!API.isLoggedIn()) { navigate('/login'); return; }
   STATE.currentUser = API.getUser(); STATE.currentRole = 'Worker';
@@ -12,8 +60,8 @@ route('/worker-dashboard', async (el) => {
 
 function renderWorkerDashboard(el) {
   const loggedUser = API.getUser();
-  const me = STATE.workers.find(w => w.phone === loggedUser || w.name === loggedUser);
-  const wName = me?.name || 'Worker';
+  const me = findCurrentWorker(loggedUser);
+  const wName = getWorkerDisplayName(me, loggedUser);
   const wId = me?.id || -1;
   const todayMap = STATE.todayAttendance();
   const todayStatus = todayMap[wId] || 'Not Marked';
@@ -91,7 +139,7 @@ function workerBottomNav(active) {
 // ============================================================
 route('/my-attendance', async (el) => {
   if (!STATE.workers.length) await refreshAll();
-  const me = STATE.workers.find(w => w.phone === API.getUser() || w.name === API.getUser());
+  const me = findCurrentWorker(API.getUser());
   const wId = me?.id || -1;
   const myRecords = STATE.attendance.filter(r => r.worker === wId)
     .sort((a, b) => b.date.localeCompare(a.date));
@@ -124,7 +172,7 @@ route('/my-attendance', async (el) => {
 // ============================================================
 route('/my-wages', async (el) => {
   if (!STATE.workers.length) await refreshAll();
-  const me = STATE.workers.find(w => w.phone === API.getUser() || w.name === API.getUser());
+  const me = findCurrentWorker(API.getUser());
   const wId = me?.id || -1;
   const earned = STATE.getTotalEarned(wId);
   const paid = STATE.getTotalPaid(wId);
@@ -168,7 +216,7 @@ route('/my-wages', async (el) => {
 // ============================================================
 route('/my-tasks', async (el) => {
   if (!STATE.workers.length) await refreshAll();
-  const me = STATE.workers.find(w => w.phone === API.getUser() || w.name === API.getUser());
+  const me = findCurrentWorker(API.getUser());
   const wId = me?.id || -1;
   const myTasks = STATE.tasks.filter(t => t.worker === wId).reverse();
   renderMyTasks(el, myTasks, wId);
@@ -196,7 +244,7 @@ function renderMyTasks(el, myTasks, wId) {
   window.markComplete = async (taskId) => {
     await API.updateTask(taskId, { is_completed: true });
     await refreshAll();
-    const me = STATE.workers.find(w => w.phone === API.getUser() || w.name === API.getUser());
+    const me = findCurrentWorker(API.getUser());
     const wId2 = me?.id || -1;
     const updated = STATE.tasks.filter(t => t.worker === wId2).reverse();
     renderMyTasks(el, updated, wId2);
@@ -209,7 +257,8 @@ function renderMyTasks(el, myTasks, wId) {
 // ============================================================
 route('/worker-profile', async (el) => {
   if (!STATE.workers.length) await refreshAll();
-  const me = STATE.workers.find(w => w.phone === API.getUser() || w.name === API.getUser());
+  const me = findCurrentWorker(API.getUser());
+  const displayName = getWorkerDisplayName(me, API.getUser());
   const daysPresent = STATE.getPresentDaysCount(me?.id || -1);
   el.innerHTML = `
     <div class="top-bar">
@@ -219,18 +268,18 @@ route('/worker-profile', async (el) => {
     </div>
     <div class="content with-bottom-nav">
       <div class="profile-header">
-        <div class="avatar large">${avatarLetter(me?.name)}</div>
-        <div style="font-size:22px;font-weight:800;color:var(--green-dark)">${me?.name || 'Worker'}</div>
+        <div class="avatar large">${avatarLetter(displayName)}</div>
+        <div style="font-size:22px;font-weight:800;color:var(--green-dark)">${displayName}</div>
         <div class="text-gray">Worker ID: #${me?.id || '0000'}</div>
       </div>
       <div class="card mb-16 profile-info-card">
         <div class="fw-bold text-dark mb-16">Information</div>
         <div class="info-row"><span class="info-icon">${ICONS.phone.replace('viewBox','style="width:20px;height:20px" viewBox')}</span>
-          <div><div class="info-label">Phone</div><div class="info-value">${me?.phone || 'Not set'}</div></div></div>
+          <div><div class="info-label">Phone</div><div class="info-value">${me?.phone || API.getUser() || 'Not set'}</div></div></div>
         <div class="info-row"><span class="info-icon">${ICONS.home.replace('viewBox','style="width:20px;height:20px" viewBox')}</span>
           <div><div class="info-label">Address</div><div class="info-value">${me?.address || 'Not set'}</div></div></div>
         <div class="info-row"><span class="info-icon">${ICONS.work.replace('viewBox','style="width:20px;height:20px" viewBox')}</span>
-          <div><div class="info-label">Role</div><div class="info-value">${me?.role || 'General Labor'}</div></div></div>
+          <div><div class="info-label">Role</div><div class="info-value">${me?.role || 'Farm Worker'}</div></div></div>
         <div class="info-row"><span class="info-icon">${ICONS.calendar.replace('viewBox','style="width:20px;height:20px" viewBox')}</span>
           <div><div class="info-label">Joining Date</div><div class="info-value">${me?.join_date || 'N/A'}</div></div></div>
       </div>

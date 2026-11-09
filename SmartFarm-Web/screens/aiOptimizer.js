@@ -353,3 +353,4 @@ function renderWorkerProfilesTab(profiles) {
     </div>
   `;
 }
+

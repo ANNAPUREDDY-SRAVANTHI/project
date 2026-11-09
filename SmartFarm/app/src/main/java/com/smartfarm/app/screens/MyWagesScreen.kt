@@ -32,8 +32,8 @@ fun MyWagesScreen(navController: NavController, viewModel: WorkerViewModel) {
     val allPayments by viewModel.paymentHistory.collectAsState()
     val loggedInPhone by viewModel.currentUsername.collectAsState()
 
-    // 2. Identify the current logged-in worker by phone number
-    val currentWorker = workers.find { it.phone == loggedInPhone }
+    // 2. Identify the current logged-in worker by phone or name
+    val currentWorker = remember(workers, loggedInPhone) { viewModel.findWorkerForUser(loggedInPhone) }
     val workerId = currentWorker?.id ?: -1
 
     // Filter payments to show only records belonging to this worker

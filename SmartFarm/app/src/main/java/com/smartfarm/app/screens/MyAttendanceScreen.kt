@@ -26,9 +26,9 @@ fun MyAttendanceScreen(navController: NavController, viewModel: WorkerViewModel)
     val workers by viewModel.allWorkers.collectAsState(initial = emptyList())
     val attendanceMap by viewModel.todayAttendance.collectAsState()
 
-    // --- THE FIX: Find the logged-in worker by phone number ---
+    // --- Find the logged-in worker by phone or name ---
     val loggedInPhone by viewModel.currentUsername.collectAsState()
-    val currentWorker = workers.find { it.phone == loggedInPhone }
+    val currentWorker = remember(workers, loggedInPhone) { viewModel.findWorkerForUser(loggedInPhone) }
     val workerId = currentWorker?.id ?: -1
 
     // Get the status marked by Admin for today (Defaults to Pending)

@@ -152,4 +152,57 @@ class WorkerViewModel : ViewModel() {
 
     fun updateWorker(w: Worker) = viewModelScope.launch { if(RetrofitClient.instance.updateWorker(w.id, w).isSuccessful) fetchWorkers() }
     fun deleteWorker(w: Worker) = viewModelScope.launch { if(RetrofitClient.instance.deleteWorker(w.id).isSuccessful) fetchWorkers() }
+
+    // --- WORKER RESOLUTION & DISPLAY HELPERS ---
+    fun findWorkerForUser(identifier: String): Worker? {
+        val clean = identifier.trim()
+        if (clean.isBlank()) return null
+        val digitsOnly = clean.filter { it.isDigit() }
+        val workers = _allWorkers.value
+
+        // 1. Phone match (exact, or last 10 digits match to ignore prefixes like +91 or 0)
+        val byPhone = workers.firstOrNull { w ->
+            val wPhone = w.phone.trim()
+            val wDigits = wPhone.filter { it.isDigit() }
+            wPhone.equals(clean, ignoreCase = true) ||
+            (digitsOnly.length >= 5 && wDigits.endsWith(digitsOnly)) ||
+            (wDigits.length >= 5 && digitsOnly.endsWith(wDigits))
+        }
+        if (byPhone != null) return byPhone
+
+        // 2. Exact name match (case-insensitive & trimmed)
+        val byExactName = workers.firstOrNull { w ->
+            w.name.trim().equals(clean, ignoreCase = true)
+        }
+        if (byExactName != null) return byExactName
+
+        // 3. Word match (e.g. worker is "Ramesh Kumar" or "Kumar S", identifier is "kumar")
+        val byWordMatch = workers.firstOrNull { w ->
+            w.name.trim().split(Regex("\\s+")).any { word ->
+                word.equals(clean, ignoreCase = true)
+            }
+        }
+        if (byWordMatch != null) return byWordMatch
+
+        // 4. Substring contains match (either direction)
+        val byContains = workers.firstOrNull { w ->
+            val wName = w.name.trim().lowercase(Locale.getDefault())
+            val cleanLower = clean.lowercase(Locale.getDefault())
+            wName.contains(cleanLower) || cleanLower.contains(wName)
+        }
+        return byContains
+    }
+
+    fun getWorkerDisplayName(worker: Worker?, fallbackUsername: String): String {
+        if (worker != null && worker.name.isNotBlank()) {
+            return worker.name.trim()
+        }
+        val clean = fallbackUsername.trim()
+        if (clean.isNotBlank()) {
+            return clean.split(Regex("\\s+")).joinToString(" ") { word ->
+                word.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
+            }
+        }
+        return "Worker"
+    }
 }

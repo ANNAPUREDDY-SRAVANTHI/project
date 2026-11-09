@@ -34,9 +34,13 @@ fun WorkerDashboard(navController: NavController, viewModel: WorkerViewModel) {
     val loggedInPhone by viewModel.currentUsername.collectAsState()
     val notifications by viewModel.notifications.collectAsState()
 
-    // 2. Match Login username with Worker Profile
-    val currentWorker = workers.find { it.phone == loggedInPhone || it.name == loggedInPhone }
-    val workerName = currentWorker?.name ?: "Worker"
+    // 2. Match Login username with Worker Profile (robust case-insensitive & fuzzy matching)
+    val currentWorker = remember(workers, loggedInPhone) {
+        viewModel.findWorkerForUser(loggedInPhone)
+    }
+    val workerName = remember(currentWorker, loggedInPhone) {
+        viewModel.getWorkerDisplayName(currentWorker, loggedInPhone)
+    }
     val workerId = currentWorker?.id ?: -1
 
     // 3. Prepare real-time stats
