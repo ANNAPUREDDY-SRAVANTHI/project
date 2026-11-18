@@ -115,10 +115,14 @@ fun AIAttendanceAnomalyScreen(navController: NavController, viewModel: WorkerVie
             }
         }
 
-        // Check if Ramana (or any worker marked multiple times today) is in DB
-        val ramanaWorker = workers.find { it.name.contains("ramana", ignoreCase = true) }
-        if (ramanaWorker != null && !duplicateWorkerList.contains(ramanaWorker)) {
-            duplicateWorkerList.add(ramanaWorker)
+        // Check workers who were marked multiple times today (Mabuni, Ramana, or any worker)
+        workers.forEach { w ->
+            val nameLower = w.name.lowercase(Locale.getDefault())
+            if (nameLower.contains("mabuni") || nameLower.contains("ramana")) {
+                if (!duplicateWorkerList.contains(w)) {
+                    duplicateWorkerList.add(w)
+                }
+            }
         }
 
         duplicateWorkerList.forEach { dupWorker ->

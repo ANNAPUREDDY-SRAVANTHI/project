@@ -71,6 +71,12 @@ const API = (() => {
         if (window.STATE) STATE.attendance = fresh;
         const match = fresh.find(r => String(r.worker) === String(rec.worker) && r.date === rec.date);
         if (match && match.id) {
+          // Record duplicate submission dynamically for this worker
+          try {
+            const dupMap = JSON.parse(localStorage.getItem('smartfarm_duplicate_marks') || '{}');
+            dupMap[rec.worker] = (dupMap[rec.worker] || 1) + 1;
+            localStorage.setItem('smartfarm_duplicate_marks', JSON.stringify(dupMap));
+          } catch(e) {}
           const r2 = await http("PUT", `api/attendance/${match.id}/`, rec);
           return r2.ok;
         }

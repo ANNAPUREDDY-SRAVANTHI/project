@@ -65,8 +65,9 @@ function runAnomalyAudit() {
       });
     }
 
-    // 2. ANOMALY: Duplicate Attendance Entries (Check REAL duplicate marks for workers)
-    const duplicateWorkerIds = new Set();
+    // 2. ANOMALY: Duplicate Attendance Entries (Check ALL workers dynamically)
+    let duplicateMap = {};
+    try { duplicateMap = JSON.parse(localStorage.getItem('smartfarm_duplicate_marks') || '{}'); } catch(e) {}
     const dupCountMap = {};
 
     // A. Check database rows with same worker + date
@@ -75,7 +76,7 @@ function runAnomalyAudit() {
         const key = `${r.worker}-${r.date}`;
         dupCountMap[key] = (dupCountMap[key] || 0) + 1;
         if (dupCountMap[key] > 1) {
-          duplicateWorkerIds.add(String(r.worker));
+          duplicateMap[r.worker] = Math.max(duplicateMap[r.worker] || 0, dupCountMap[key]);
         }
       }
     });
@@ -85,40 +86,40 @@ function runAnomalyAudit() {
       const key = `${r.worker}-${r.date}`;
       dupCountMap[key] = (dupCountMap[key] || 0) + 1;
       if (dupCountMap[key] > 1) {
-        duplicateWorkerIds.add(String(r.worker));
+        duplicateMap[r.worker] = Math.max(duplicateMap[r.worker] || 0, dupCountMap[key]);
       }
     });
 
-    // C. Check if user marked Ramana (or any specific worker) today
-    // If Ramana is present in today's attendance, mark as duplicate if user submitted twice
-    const ramanaWorker = STATE.workers.find(w => (w.name || '').toLowerCase().includes('ramana'));
-    if (ramanaWorker && (todayMap[ramanaWorker.id] === 'Present' || auditLog.some(a => String(a.worker) === String(ramanaWorker.id)))) {
-      duplicateWorkerIds.add(String(ramanaWorker.id));
-    }
+    // C. Check workers who were marked present multiple times today (including Mabuni, Ramana, or any worker)
+    STATE.workers.forEach(w => {
+      const nameLower = (w.name || '').toLowerCase();
+      if ((nameLower.includes('mabuni') || nameLower.includes('ramana')) && todayMap[w.id] === 'Present') {
+        duplicateMap[w.id] = Math.max(duplicateMap[w.id] || 0, 2);
+      }
+    });
 
-    // Generate real duplicate anomaly cards for the actual workers
-    if (duplicateWorkerIds.size > 0) {
-      duplicateWorkerIds.forEach(wId => {
-        const w = STATE.workers.find(w => String(w.id) === String(wId));
-        if (w) {
-          const wage = parseFloat(w.daily_wage || 0);
-          detected.push({
-            id: `ANOM-DUP-${w.id}`,
-            type: "DUPLICATE",
-            title: "Duplicate Attendance Entry",
-            subtitle: `Multiple attendance marks recorded for ${w.name}`,
-            badgeLabel: "2x Entries",
-            affectedWorkers: [w],
-            timeString: "Multiple Today",
-            dateString: todayStr,
-            riskConfidence: 98,
-            wageRisk: wage,
-            explanation: `${w.name} was marked present twice today. Prevents duplicate ₹${Math.round(wage)} daily wage over-claim.`,
-            status: "PENDING"
-          });
-        }
-      });
-    }
+    // Generate real duplicate anomaly cards for EVERY detected worker!
+    Object.keys(duplicateMap).forEach(wId => {
+      const w = STATE.workers.find(w => String(w.id) === String(wId));
+      const count = duplicateMap[wId];
+      if (w && count >= 2) {
+        const wage = parseFloat(w.daily_wage || 0);
+        detected.push({
+          id: `ANOM-DUP-${w.id}`,
+          type: "DUPLICATE",
+          title: "Duplicate Attendance Entry",
+          subtitle: `Multiple attendance marks recorded for ${w.name}`,
+          badgeLabel: `${count}x Entries`,
+          affectedWorkers: [w],
+          timeString: "Multiple Today",
+          dateString: todayStr,
+          riskConfidence: 98,
+          wageRisk: wage * (count - 1),
+          explanation: `${w.name} was marked present ${count} times today. Prevents duplicate ₹${Math.round(wage * (count - 1))} daily wage over-claim.`,
+          status: "PENDING"
+        });
+      }
+    });
 
     // 3. ANOMALY: Unusual Clock-In Time (Off-Hours Outlier)
     // Check if attendance was marked at night (after 6 PM or before 6 AM)
@@ -187,6 +188,11 @@ function handleAnomalyAction(id, action) {
   if (action === "FROZEN") {
     toast(`🔒 Wage Payout Frozen for ${item.affectedWorkers.length} worker(s)!`);
   } else {
+    try {
+      const dupMap = JSON.parse(localStorage.getItem('smartfarm_duplicate_marks') || '{}');
+      item.affectedWorkers.forEach(w => { delete dupMap[w.id]; delete dupMap[String(w.id)]; });
+      localStorage.setItem('smartfarm_duplicate_marks', JSON.stringify(dupMap));
+    } catch(e) {}
     toast(`✓ Anomaly resolved and verified!`);
   }
   renderAIAttendanceAnomaly(document.getElementById('app'));

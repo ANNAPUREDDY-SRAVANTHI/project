@@ -100,6 +100,19 @@ function renderMarkAttendance(el, selection) {
   };
   window.submitAtt = async () => {
     const today = todayISO();
+    const todayMap = STATE.todayAttendance ? STATE.todayAttendance() : {};
+
+    // Track duplicate markings dynamically for ANY worker
+    try {
+      const dupMap = JSON.parse(localStorage.getItem('smartfarm_duplicate_marks') || '{}');
+      Object.entries(selection).forEach(([wid, status]) => {
+        if (todayMap[wid] || todayMap[parseInt(wid)]) {
+          dupMap[wid] = (dupMap[wid] || 1) + 1;
+        }
+      });
+      localStorage.setItem('smartfarm_duplicate_marks', JSON.stringify(dupMap));
+    } catch (e) {}
+
     const promises = Object.entries(selection).map(([wid, status]) =>
       API.submitAttendance({ worker: parseInt(wid), date: today, status }));
     await Promise.all(promises);
