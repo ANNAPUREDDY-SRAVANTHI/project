@@ -1,13 +1,12 @@
 // ============================================================
 //  AI ATTENDANCE ANOMALY DETECTION SCREEN
-//  Unsupervised Clock-In Pattern Auditing & Anti-Fraud Defense
-//  Mirrors TrueIn Design & AIAttendanceAnomalyScreen.kt
+//  Database-Driven Fraud & Irregularity Scanner
 // ============================================================
 
 const anomState = {
   isAuditing: false,
   auditCompleted: false,
-  selectedFilter: 'ALL', // 'ALL', 'IDENTICAL', 'DUPLICATE', 'UNUSUAL', 'GHOST'
+  selectedFilter: 'ALL', // 'ALL', 'DUPLICATE', 'GHOST'
   anomalies: []
 };
 
@@ -37,35 +36,10 @@ function runAnomalyAudit() {
   setTimeout(() => {
     const detected = [];
     const todayStr = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-    const todayISO = new Date().toISOString().split('T')[0];
     const todayMap = STATE.todayAttendance ? STATE.todayAttendance() : {};
     const auditLog = getAuditLogs();
 
-    // 1. ANOMALY: Identical Clock-In Pattern (Based on REAL today's attendance batch)
-    // Find workers who were marked Present today
-    const presentTodayWorkers = STATE.workers.filter(w => todayMap[w.id] === 'Present');
-    const batchWorkers = presentTodayWorkers.length >= 2 ? presentTodayWorkers : (STATE.workers.slice(0, 4));
-
-    if (batchWorkers.length >= 2) {
-      const wageSum = batchWorkers.reduce((s, w) => s + parseFloat(w.daily_wage || 0), 0);
-      const currentTimeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      detected.push({
-        id: "ANOM-BATCH-TODAY",
-        type: "IDENTICAL",
-        title: "Identical Clock-In Pattern",
-        subtitle: "Multiple employees clocked in exactly at the same time",
-        badgeLabel: `Repeated ${currentTimeStr.includes(':') ? currentTimeStr : '9:00 AM'}`,
-        affectedWorkers: batchWorkers,
-        timeString: currentTimeStr,
-        dateString: todayStr,
-        riskConfidence: 94,
-        wageRisk: wageSum,
-        explanation: `${batchWorkers.length} workers (${batchWorkers.map(w => w.name).join(', ')}) share synchronized attendance markings. High probability of proxy check-in or single-device batch marking.`,
-        status: "PENDING"
-      });
-    }
-
-    // 2. ANOMALY: Duplicate Attendance Entries (Check ALL workers dynamically)
+    // 1. ANOMALY: Duplicate Attendance Entries (Check ALL workers dynamically)
     let duplicateMap = {};
     try { duplicateMap = JSON.parse(localStorage.getItem('smartfarm_duplicate_marks') || '{}'); } catch(e) {}
     const dupCountMap = {};
@@ -90,7 +64,7 @@ function runAnomalyAudit() {
       }
     });
 
-    // C. Check workers who were marked present multiple times today (including Mabuni, Ramana, or any worker)
+    // C. Check workers who were marked present multiple times today (including Mabuni, Ramana, etc.)
     STATE.workers.forEach(w => {
       const nameLower = (w.name || '').toLowerCase();
       if ((nameLower.includes('mabuni') || nameLower.includes('ramana')) && todayMap[w.id] === 'Present') {
@@ -121,34 +95,7 @@ function runAnomalyAudit() {
       }
     });
 
-    // 3. ANOMALY: Unusual Clock-In Time (Off-Hours Outlier)
-    // Check if attendance was marked at night (after 6 PM or before 6 AM)
-    const currentHour = new Date().getHours();
-    const isOffHours = currentHour >= 18 || currentHour < 6;
-    const offHoursWorker = STATE.workers.find(w => todayMap[w.id] === 'Present') || STATE.workers[STATE.workers.length - 1];
-
-    if (offHoursWorker) {
-      const wage = parseFloat(offHoursWorker.daily_wage || 0);
-      const displayTime = isOffHours
-        ? new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        : "11:45 PM";
-      detected.push({
-        id: `ANOM-TIME-${offHoursWorker.id}`,
-        type: "UNUSUAL",
-        title: "Unusual Clock-In Time Outlier",
-        subtitle: `Marked present outside normal farm shift window for ${offHoursWorker.name}`,
-        badgeLabel: `${displayTime} Outlier`,
-        affectedWorkers: [offHoursWorker],
-        timeString: displayTime,
-        dateString: todayStr,
-        riskConfidence: 89,
-        wageRisk: wage,
-        explanation: `${offHoursWorker.name} was logged at ${displayTime} (farm shifts run 06:00 AM - 06:00 PM). Statistical Z-score = 3.64 (p < 0.001).`,
-        status: "PENDING"
-      });
-    }
-
-    // 4. ANOMALY: Ghost Worker / Task Mismatch (Marked Present with 0 Tasks)
+    // 2. ANOMALY: Ghost Worker / Task Mismatch (Marked Present with 0 Tasks)
     const realGhostWorker = STATE.workers.find(w => {
       const isPresent = todayMap[w.id] === 'Present' || STATE.attendance.some(r => String(r.worker) === String(w.id) && r.status === 'Present');
       const hasTasks = STATE.tasks.some(t => String(t.worker) === String(w.id));
@@ -218,9 +165,9 @@ function renderAIAttendanceAnomaly(el) {
       <div class="top-bar-col">
         <div style="display:flex;align-items:center;gap:6px">
           <span class="top-bar-title" style="font-size:16px">AI Attendance Anomaly</span>
-          <span style="background:#E8F5E9;color:#2E7D32;font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px">Very useful</span>
+          <span style="background:#E8F5E9;color:#2E7D32;font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px">Active</span>
         </div>
-        <span class="top-bar-subtitle">Zero-Trust Clock-In Auditing & Fraud Defense</span>
+        <span class="top-bar-subtitle">Database Duplicate & Ghost Worker Auditing</span>
       </div>
     </div>
 
@@ -228,17 +175,17 @@ function renderAIAttendanceAnomaly(el) {
       <!-- Hero Banner Card -->
       <div style="background:#1B5E20;border-radius:18px;padding:16px;color:#fff;margin-bottom:16px;box-shadow:var(--card-shadow)">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-          <span style="background:#81C784;color:#1B5E20;font-size:10px;font-weight:700;padding:2px 8px;border-radius:8px">Unsupervised Anomaly ML</span>
-          <span style="color:#C8E6C9;font-size:11px">Z-Score & Cluster Isolation</span>
+          <span style="background:#81C784;color:#1B5E20;font-size:10px;font-weight:700;padding:2px 8px;border-radius:8px">Database Audit ML</span>
+          <span style="color:#C8E6C9;font-size:11px">Duplicate & Ghost Worker Defense</span>
         </div>
         <div style="font-size:17px;font-weight:700;margin-bottom:4px">Automated Attendance Integrity Scanner</div>
         <div style="font-size:12px;color:#E8F5E9;line-height:16px;margin-bottom:14px">
-          Scans clock-in timestamps, multi-worker batch submissions, and task correlation to expose proxy check-ins, duplicate wage claims, and ghost workers.
+          Scans database records to expose duplicate attendance wage claims, repeat submissions, and ghost workers with 0 task outputs.
         </div>
         <button onclick="runAnomalyAudit()" ${anomState.isAuditing ? 'disabled' : ''}
           style="width:100%;height:46px;background:#fff;color:#1B5E20;border:none;border-radius:12px;font-weight:700;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 2px 6px rgba(0,0,0,0.15)">
           <span style="font-size:16px">&#128269;</span>
-          <span>${anomState.isAuditing ? 'Scanning Clock-In Matrix...' : 'Run AI Attendance Audit'}</span>
+          <span>${anomState.isAuditing ? 'Scanning Database Records...' : 'Run AI Attendance Audit'}</span>
         </button>
       </div>
 
@@ -247,7 +194,7 @@ function renderAIAttendanceAnomaly(el) {
         <div class="card" style="padding:16px;margin-bottom:16px">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
             <span style="font-size:14px;font-weight:700;color:#1B5E20">Audit Summary</span>
-            <span style="font-size:11px;color:var(--gray-text)">Real-Time Verification</span>
+            <span style="font-size:11px;color:var(--gray-text)">Database Verification</span>
           </div>
           <div style="display:flex;gap:8px">
             <div style="flex:1;background:#FFEBEE;border-radius:12px;padding:10px;text-align:center">
@@ -269,9 +216,8 @@ function renderAIAttendanceAnomaly(el) {
         <div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;margin-bottom:14px">
           ${[
             ['ALL', `All (${anomState.anomalies.length})`],
-            ['IDENTICAL', 'Identical (9:00 AM)'],
             ['DUPLICATE', 'Duplicates'],
-            ['UNUSUAL', 'Off-Hours']
+            ['GHOST', 'Ghost Workers']
           ].map(([key, label]) => `
             <button onclick="anomState.selectedFilter='${key}';renderAIAttendanceAnomaly(document.getElementById('app'))"
               style="padding:6px 12px;border-radius:20px;border:none;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;background:${anomState.selectedFilter === key ? '#2E7D32' : '#fff'};color:${anomState.selectedFilter === key ? '#fff' : '#424242'};box-shadow:0 1px 3px rgba(0,0,0,0.08)">
@@ -283,7 +229,12 @@ function renderAIAttendanceAnomaly(el) {
         <!-- Anomalies Feed -->
         <div style="font-size:15px;font-weight:700;color:#1B5E20;margin-bottom:12px">Detected Irregularities & Fraud Patterns</div>
         <div style="display:flex;flex-direction:column;gap:12px">
-          ${filtered.map(anom => renderAnomalyCard(anom)).join('')}
+          ${filtered.length === 0 ? `
+            <div class="card" style="padding:24px;text-align:center">
+              <div style="font-size:24px;margin-bottom:8px">&#9989;</div>
+              <div style="font-weight:700;font-size:14px">No anomalies found in this category.</div>
+            </div>
+          ` : filtered.map(anom => renderAnomalyCard(anom)).join('')}
         </div>
       ` : `
         <!-- Pre-audit state -->
@@ -293,7 +244,7 @@ function renderAIAttendanceAnomaly(el) {
           </div>
           <div style="font-weight:700;font-size:16px;margin-bottom:6px">Audit Ready to Run</div>
           <div style="font-size:12px;color:var(--gray-text);max-width:280px;margin:0 auto;line-height:16px">
-            Tap 'Run AI Attendance Audit' above to scan clock-in timestamps, detect batch proxy patterns, and protect farm payroll.
+            Tap 'Run AI Attendance Audit' above to scan database attendance for duplicate marks and ghost worker claims.
           </div>
         </div>
       `}
@@ -302,107 +253,48 @@ function renderAIAttendanceAnomaly(el) {
 }
 
 function renderAnomalyCard(item) {
-  if (item.type === 'IDENTICAL') {
-    // EXACT MATCHING TRUEIN CARD DESIGN
-    return `
-      <div class="card" style="border:1.5px solid #FFB74D;padding:16px;background:#fff">
-        <div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:10px">
-          <div style="width:40px;height:40px;border-radius:10px;background:#FFF8E1;display:flex;align-items:center;justify-content:center;color:#F57C00;flex-shrink:0">
-            ${ICONS.warning}
-          </div>
-          <div style="flex:1">
-            <div style="font-weight:800;font-size:16px;color:#212121">${item.title}</div>
-            <div style="font-size:12px;color:var(--gray-text);margin-top:2px">${item.subtitle}</div>
-          </div>
-        </div>
-
-        <!-- Repeated Time Badge (Purple TrueIn Pill) -->
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
-          <span style="background:#EDE7F6;color:#5E35B1;font-weight:700;font-size:12px;padding:4px 12px;border-radius:20px">
-            ${item.badgeLabel}
-          </span>
-          <span style="font-size:11px;font-weight:700;color:#D32F2F">
-            Risk Confidence: ${item.riskConfidence}%
-          </span>
-        </div>
-
-        <!-- Worker Avatars Row -->
-        <div style="display:flex;gap:12px;background:#FAFAFA;border-radius:10px;padding:10px;align-items:center;overflow-x:auto;margin-bottom:10px">
-          ${item.affectedWorkers.map(w => `
-            <div style="display:flex;flex-direction:column;align-items:center;min-width:48px">
-              <div style="width:34px;height:34px;border-radius:50%;background:#E8F5E9;display:flex;align-items:center;justify-content:center;font-weight:700;color:#2E7D32;font-size:13px;margin-bottom:2px">
-                ${(w.name || 'W').charAt(0).toUpperCase()}
-              </div>
-              <span style="font-size:10px;font-weight:600;color:#424242;text-align:center;white-space:nowrap">${(w.name || '').split(' ')[0]}</span>
-            </div>
-          `).join('')}
-        </div>
-
-        <div style="font-size:11px;color:var(--gray-text);line-height:15px;margin-bottom:12px">
-          ${item.explanation}
-        </div>
-
-        <!-- Action Buttons -->
-        ${item.status === 'FROZEN' ? `
-          <div style="background:#FFEBEE;color:#D32F2F;font-weight:700;font-size:12px;text-align:center;padding:8px;border-radius:8px">
-            &#128274; Wage Payout Frozen for Review
-          </div>
-        ` : item.status === 'RESOLVED' ? `
-          <div style="background:#E8F5E9;color:#2E7D32;font-weight:700;font-size:12px;text-align:center;padding:8px;border-radius:8px">
-            &#10004; Verified & Dismissed
-          </div>
-        ` : `
-          <div style="display:flex;gap:8px">
-            <button onclick="handleAnomalyAction('${item.id}', 'FROZEN')"
-              style="flex:1;height:38px;background:#D32F2F;color:#fff;border:none;border-radius:8px;font-weight:700;font-size:12px;cursor:pointer">
-              Freeze Payout
-            </button>
-            <button onclick="handleAnomalyAction('${item.id}', 'RESOLVED')"
-              style="flex:1;height:38px;background:transparent;border:1.5px solid #2E7D32;color:#2E7D32;border-radius:8px;font-weight:700;font-size:12px;cursor:pointer">
-              Dismiss / Verify
-            </button>
-          </div>
-        `}
-      </div>
-    `;
-  }
-
-  // Duplicate / Unusual / Ghost cards
   const isDup = item.type === 'DUPLICATE';
-  const isGhost = item.type === 'GHOST';
-  const borderColor = isDup ? '#FFCDD2' : isGhost ? '#FFE0B2' : '#BBDEFB';
-  const iconColor = isDup ? '#D32F2F' : isGhost ? '#E65100' : '#1976D2';
-  const iconBg = isDup ? '#FFEBEE' : isGhost ? '#FFF3E0' : '#E3F2FD';
+  const borderColor = isDup ? '#FFCDD2' : '#FFE0B2';
+  const iconColor = isDup ? '#D32F2F' : '#E65100';
+  const iconBg = isDup ? '#FFEBEE' : '#FFF3E0';
 
   return `
-    <div class="card" style="border:1px solid ${borderColor};padding:14px">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
-        <div style="display:flex;gap:10px;align-items:center">
-          <div style="width:34px;height:34px;border-radius:50%;background:${iconBg};display:flex;align-items:center;justify-content:center;color:${iconColor}">
-            ${isDup ? ICONS.assignment : ICONS.schedule}
+    <div class="card" style="border:1.5px solid ${borderColor};padding:16px;background:#fff">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
+        <div style="display:flex;gap:12px;align-items:center">
+          <div style="width:40px;height:40px;border-radius:10px;background:${iconBg};display:flex;align-items:center;justify-content:center;color:${iconColor};flex-shrink:0">
+            ${isDup ? ICONS.warning : ICONS.assignment}
           </div>
           <div>
-            <div style="font-weight:700;font-size:14px;color:#212121">${item.title}</div>
-            <div style="font-size:11px;color:var(--gray-text)">Worker: ${item.affectedWorkers[0]?.name || 'Unknown'}</div>
+            <div style="font-weight:800;font-size:15px;color:#212121">${item.title}</div>
+            <div style="font-size:12px;color:var(--gray-text)">Worker: <strong style="color:#212121">${item.affectedWorkers[0]?.name || 'Unknown'}</strong></div>
           </div>
         </div>
-        <span style="background:${iconBg};color:${iconColor};font-size:10px;font-weight:700;padding:2px 8px;border-radius:6px">
+        <span style="background:${iconBg};color:${iconColor};font-size:11px;font-weight:700;padding:3px 10px;border-radius:8px">
           ${item.badgeLabel}
         </span>
       </div>
 
-      <div style="font-size:11px;color:var(--gray-text);line-height:15px;margin-bottom:10px">
+      <div style="font-size:12px;color:#424242;line-height:16px;margin-bottom:12px;background:#FAFAFA;border-radius:8px;padding:10px">
         ${item.explanation}
       </div>
 
       <div style="display:flex;justify-content:space-between;align-items:center">
-        <span style="font-size:11px;font-weight:700;color:#D32F2F">
-          ${isDup ? `Over-claim Risk: ₹${Math.round(item.wageRisk)}` : `Risk: ${item.riskConfidence}%`}
+        <span style="font-size:12px;font-weight:800;color:#D32F2F">
+          ${isDup ? `Over-claim Risk: ₹${Math.round(item.wageRisk)}` : `Risk Confidence: ${item.riskConfidence}%`}
         </span>
-        <button onclick="handleAnomalyAction('${item.id}', 'RESOLVED')"
-          style="padding:6px 12px;background:${item.status === 'RESOLVED' ? '#E8F5E9' : '#2E7D32'};color:${item.status === 'RESOLVED' ? '#2E7D32' : '#fff'};border:none;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer">
-          ${item.status === 'RESOLVED' ? 'Resolved ✓' : 'Verify & Clear'}
-        </button>
+        <div style="display:flex;gap:8px">
+          ${isDup ? `
+            <button onclick="handleAnomalyAction('${item.id}', 'FROZEN')"
+              style="padding:6px 12px;background:${item.status === 'FROZEN' ? '#FFEBEE' : '#D32F2F'};color:${item.status === 'FROZEN' ? '#D32F2F' : '#fff'};border:none;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer">
+              ${item.status === 'FROZEN' ? 'Frozen 🔒' : 'Freeze Payout'}
+            </button>
+          ` : ''}
+          <button onclick="handleAnomalyAction('${item.id}', 'RESOLVED')"
+            style="padding:6px 12px;background:${item.status === 'RESOLVED' ? '#E8F5E9' : '#2E7D32'};color:${item.status === 'RESOLVED' ? '#2E7D32' : '#fff'};border:none;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer">
+            ${item.status === 'RESOLVED' ? 'Resolved ✓' : 'Verify & Clear'}
+          </button>
+        </div>
       </div>
     </div>
   `;

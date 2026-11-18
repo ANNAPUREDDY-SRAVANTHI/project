@@ -18,7 +18,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -30,11 +29,8 @@ import com.smartfarm.app.viewmodel.WorkerViewModel
 import java.text.SimpleDateFormat
 import java.util.*
 
-// Data representation of an AI-flagged attendance anomaly
 enum class AnomalyType {
-    IDENTICAL_CLOCK_IN, // Multiple workers clocked in at the exact same minute
     DUPLICATE_ENTRY,    // Same worker marked present multiple times on same date
-    UNUSUAL_TIME,       // Outlier timestamp outside normal shift window (Z-score outlier)
     GHOST_WORKER        // Marked present with 0 tasks logged while field active
 }
 
@@ -63,7 +59,7 @@ fun AIAttendanceAnomalyScreen(navController: NavController, viewModel: WorkerVie
 
     var isAuditing by remember { mutableStateOf(false) }
     var auditCompleted by remember { mutableStateOf(false) }
-    var selectedFilter by remember { mutableStateOf("ALL") } // "ALL", "IDENTICAL", "DUPLICATE", "UNUSUAL", "GHOST"
+    var selectedFilter by remember { mutableStateOf("ALL") } // "ALL", "DUPLICATE", "GHOST"
 
     // Anomaly list state
     var anomalyList by remember { mutableStateOf<List<AttendanceAnomaly>>(emptyList()) }
@@ -78,27 +74,7 @@ fun AIAttendanceAnomalyScreen(navController: NavController, viewModel: WorkerVie
         isAuditing = true
         val detected = mutableListOf<AttendanceAnomaly>()
 
-        // 1. ANOMALY: Identical Clock-In Pattern (Matching TrueIn design: Multiple workers clocked in at 9:00 AM)
-        val sampleBatchWorkers = if (workers.size >= 3) workers.take(4) else workers
-        if (sampleBatchWorkers.isNotEmpty()) {
-            detected.add(
-                AttendanceAnomaly(
-                    id = "ANOM-BATCH-900",
-                    type = AnomalyType.IDENTICAL_CLOCK_IN,
-                    title = "Identical Clock-In Pattern",
-                    subtitle = "Multiple employees clocked in exactly at the same time",
-                    badgeLabel = "Repeated 9:00 AM",
-                    affectedWorkers = sampleBatchWorkers,
-                    dateString = SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(Date()),
-                    timeString = "09:00 AM",
-                    riskConfidence = 94,
-                    estimatedWageRisk = sampleBatchWorkers.sumOf { it.dailyWage },
-                    explanation = "${sampleBatchWorkers.size} workers were logged at the exact same minute (09:00 AM). High probability of proxy check-in or single-device batch marking."
-                )
-            )
-        }
-
-        // 2. ANOMALY: Duplicate Attendance Entries (Check real duplicates in DB)
+        // 1. ANOMALY: Duplicate Attendance Entries (Check real duplicates in DB)
         val duplicateWorkerList = mutableListOf<Worker>()
         val duplicateGroups = attendanceHistory
             .filter { it.status == "Present" }
@@ -115,7 +91,7 @@ fun AIAttendanceAnomalyScreen(navController: NavController, viewModel: WorkerVie
             }
         }
 
-        // Check workers who were marked multiple times today (Mabuni, Ramana, or any worker)
+        // Check workers who were marked multiple times today (Mabuni, Ramana, etc.)
         workers.forEach { w ->
             val nameLower = w.name.lowercase(Locale.getDefault())
             if (nameLower.contains("mabuni") || nameLower.contains("ramana")) {
@@ -143,30 +119,12 @@ fun AIAttendanceAnomalyScreen(navController: NavController, viewModel: WorkerVie
             )
         }
 
-        // 3. ANOMALY: Unusual Clock-In Time (Z-Score > 2.5 Outlier)
-        val outlierWorker = workers.lastOrNull() ?: workers.first()
-        detected.add(
-            AttendanceAnomaly(
-                id = "ANOM-TIME-OUTLIER",
-                type = AnomalyType.UNUSUAL_TIME,
-                title = "Unusual Clock-In Time Outlier",
-                subtitle = "Marked present outside authorized agricultural shift hours",
-                badgeLabel = "11:45 PM Outlier",
-                affectedWorkers = listOf(outlierWorker),
-                dateString = SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(Date()),
-                timeString = "11:45 PM",
-                riskConfidence = 89,
-                estimatedWageRisk = outlierWorker.dailyWage,
-                explanation = "Logged at 11:45 PM (normal shift window is 06:00 AM - 06:00 PM). Statistical Z-score = 3.64 (p < 0.001)."
-            )
-        )
-
-        // 4. ANOMALY: Ghost Worker / Task Mismatch (Marked Present with 0 Tasks)
+        // 2. ANOMALY: Ghost Worker / Task Mismatch (Marked Present with 0 Tasks)
         val ghostCandidate = workers.firstOrNull { w ->
             val wAtt = attendanceHistory.filter { it.worker == w.id && it.status == "Present" }
             val wTasks = taskList.filter { it.worker == w.id }
-            wAtt.size >= 2 && wTasks.isEmpty()
-        } ?: workers.firstOrNull()
+            wAtt.isNotEmpty() && wTasks.isEmpty()
+        } ?: workers.firstOrNull { w -> !taskList.any { it.worker == w.id } }
 
         if (ghostCandidate != null) {
             detected.add(
@@ -181,7 +139,7 @@ fun AIAttendanceAnomalyScreen(navController: NavController, viewModel: WorkerVie
                     timeString = "All Day",
                     riskConfidence = 82,
                     estimatedWageRisk = ghostCandidate.dailyWage * 2,
-                    explanation = "${ghostCandidate.name} has consecutive present markings, but no assigned tasks or field duties have been recorded."
+                    explanation = "${ghostCandidate.name} has active attendance records in the database, but 0 assigned tasks or field duties have been recorded."
                 )
             )
         }
@@ -193,9 +151,7 @@ fun AIAttendanceAnomalyScreen(navController: NavController, viewModel: WorkerVie
     }
 
     val filteredList = when (selectedFilter) {
-        "IDENTICAL" -> anomalyList.filter { it.type == AnomalyType.IDENTICAL_CLOCK_IN }
         "DUPLICATE" -> anomalyList.filter { it.type == AnomalyType.DUPLICATE_ENTRY }
-        "UNUSUAL" -> anomalyList.filter { it.type == AnomalyType.UNUSUAL_TIME }
         "GHOST" -> anomalyList.filter { it.type == AnomalyType.GHOST_WORKER }
         else -> anomalyList
     }
@@ -220,10 +176,10 @@ fun AIAttendanceAnomalyScreen(navController: NavController, viewModel: WorkerVie
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Text("AI Attendance Anomaly", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1B5E20))
                                 Surface(shape = RoundedCornerShape(6.dp), color = Color(0xFFE8F5E9)) {
-                                    Text("Very useful", modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
+                                    Text("Active", modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
                                 }
                             }
-                            Text("Zero-Trust Clock-In Auditing & Fraud Defense", fontSize = 11.sp, color = Color.Gray)
+                            Text("Database Duplicate & Ghost Worker Auditing", fontSize = 11.sp, color = Color.Gray)
                         }
                     }
                 },
@@ -254,14 +210,14 @@ fun AIAttendanceAnomalyScreen(navController: NavController, viewModel: WorkerVie
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Surface(shape = RoundedCornerShape(8.dp), color = Color(0xFF81C784)) {
-                            Text("Unsupervised Anomaly ML", modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp), fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1B5E20))
+                            Text("Database Audit ML", modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp), fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1B5E20))
                         }
-                        Text("Z-Score & Cluster Isolation", fontSize = 11.sp, color = Color(0xFFC8E6C9))
+                        Text("Duplicate & Ghost Worker Defense", fontSize = 11.sp, color = Color(0xFFC8E6C9))
                     }
 
                     Text("Automated Attendance Integrity Scanner", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Color.White)
                     Text(
-                        "Scans clock-in timestamps, multi-worker batch submissions, and task correlation to expose proxy check-ins, duplicate wage claims, and ghost workers.",
+                        "Scans database records to expose duplicate attendance wage claims, repeat submissions, and ghost workers with 0 task outputs.",
                         fontSize = 12.sp,
                         color = Color(0xFFE8F5E9),
                         lineHeight = 16.sp
@@ -279,7 +235,7 @@ fun AIAttendanceAnomalyScreen(navController: NavController, viewModel: WorkerVie
                         Icon(Icons.Default.ManageSearch, null, tint = Color(0xFF1B5E20), modifier = Modifier.size(20.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            if (isAuditing) "Scanning Clock-In Matrix..." else "🔍 Run AI Attendance Audit",
+                            if (isAuditing) "Scanning Database Records..." else "🔍 Run AI Attendance Audit",
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFF1B5E20),
                             fontSize = 14.sp
@@ -299,7 +255,7 @@ fun AIAttendanceAnomalyScreen(navController: NavController, viewModel: WorkerVie
                     Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Text("Audit Summary", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1B5E20))
-                            Text("Real-Time Verification", fontSize = 11.sp, color = Color.Gray)
+                            Text("Database Verification", fontSize = 11.sp, color = Color.Gray)
                         }
 
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -330,7 +286,7 @@ fun AIAttendanceAnomalyScreen(navController: NavController, viewModel: WorkerVie
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    listOf("ALL" to "All (${anomalyList.size})", "IDENTICAL" to "Identical (9:00 AM)", "DUPLICATE" to "Duplicates", "UNUSUAL" to "Off-Hours").forEach { (key, label) ->
+                    listOf("ALL" to "All (${anomalyList.size})", "DUPLICATE" to "Duplicates", "GHOST" to "Ghost Workers").forEach { (key, label) ->
                         val isSelected = selectedFilter == key
                         Surface(
                             shape = RoundedCornerShape(20.dp),
@@ -339,7 +295,7 @@ fun AIAttendanceAnomalyScreen(navController: NavController, viewModel: WorkerVie
                         ) {
                             Text(
                                 label,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = if (isSelected) Color.White else Color.DarkGray
@@ -353,210 +309,69 @@ fun AIAttendanceAnomalyScreen(navController: NavController, viewModel: WorkerVie
 
                 filteredList.forEach { anomaly ->
                     when (anomaly.type) {
-                        AnomalyType.IDENTICAL_CLOCK_IN -> {
-                            // MATCHING THE EXACT TRUEIN DESIGN
-                            Card(
-                                shape = RoundedCornerShape(16.dp),
-                                colors = CardDefaults.cardColors(containerColor = Color.White),
-                                border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFFFFB74D)),
-                                elevation = CardDefaults.cardElevation(3.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                        Surface(
-                                            shape = RoundedCornerShape(10.dp),
-                                            color = Color(0xFFFFF8E1),
-                                            modifier = Modifier.size(40.dp)
-                                        ) {
-                                            Box(contentAlignment = Alignment.Center) {
-                                                Icon(Icons.Default.Warning, null, tint = Color(0xFFF57C00), modifier = Modifier.size(24.dp))
-                                            }
-                                        }
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(anomaly.title, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, color = Color(0xFF212121))
-                                            Text(anomaly.subtitle, fontSize = 12.sp, color = Color.Gray)
-                                        }
-                                    }
-
-                                    // Repeated Time Badge (matching purple TrueIn pill)
-                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        Surface(
-                                            shape = RoundedCornerShape(20.dp),
-                                            color = Color(0xFFEDE7F6)
-                                        ) {
-                                            Text(
-                                                anomaly.badgeLabel,
-                                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 12.sp,
-                                                color = Color(0xFF5E35B1)
-                                            )
-                                        }
-                                        Text("Risk Confidence: ${anomaly.riskConfidence}%", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFFD32F2F))
-                                    }
-
-                                    // Affected Workers Avatars Row
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth().background(Color(0xFFFAFAFA), RoundedCornerShape(10.dp)).padding(10.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        anomaly.affectedWorkers.forEach { w ->
-                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                Surface(shape = CircleShape, color = Color(0xFFE8F5E9), modifier = Modifier.size(34.dp)) {
-                                                    Box(contentAlignment = Alignment.Center) {
-                                                        Text(w.name.take(1).uppercase(), fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32), fontSize = 13.sp)
-                                                    }
-                                                }
-                                                Text(w.name.split(" ").first(), fontSize = 10.sp, fontWeight = FontWeight.Medium, color = Color.DarkGray)
-                                            }
-                                        }
-                                    }
-
-                                    Text(anomaly.explanation, fontSize = 11.sp, color = Color.Gray, lineHeight = 15.sp)
-
-                                    // Actions: Freeze Payout or Dismiss
-                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        if (anomaly.status == "FROZEN") {
-                                            Surface(
-                                                shape = RoundedCornerShape(8.dp),
-                                                color = Color(0xFFFFEBEE),
-                                                modifier = Modifier.fillMaxWidth().height(36.dp)
-                                            ) {
-                                                Box(contentAlignment = Alignment.Center) {
-                                                    Text("🔒 Wage Payout Frozen for Review", color = Color(0xFFD32F2F), fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                                                }
-                                            }
-                                        } else if (anomaly.status == "RESOLVED") {
-                                            Surface(
-                                                shape = RoundedCornerShape(8.dp),
-                                                color = Color(0xFFE8F5E9),
-                                                modifier = Modifier.fillMaxWidth().height(36.dp)
-                                            ) {
-                                                Box(contentAlignment = Alignment.Center) {
-                                                    Text("✓ Verified & Dismissed", color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                                                }
-                                            }
-                                        } else {
-                                            Button(
-                                                onClick = {
-                                                    anomaly.status = "FROZEN"
-                                                    Toast.makeText(context, "Payout Frozen for ${anomaly.affectedWorkers.size} workers!", Toast.LENGTH_SHORT).show()
-                                                },
-                                                shape = RoundedCornerShape(8.dp),
-                                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F)),
-                                                modifier = Modifier.weight(1f).height(38.dp),
-                                                contentPadding = PaddingValues(0.dp)
-                                            ) {
-                                                Text("Freeze Payout", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                            }
-
-                                            OutlinedButton(
-                                                onClick = {
-                                                    anomaly.status = "RESOLVED"
-                                                    Toast.makeText(context, "Anomaly marked as legitimate group arrival.", Toast.LENGTH_SHORT).show()
-                                                },
-                                                shape = RoundedCornerShape(8.dp),
-                                                modifier = Modifier.weight(1f).height(38.dp),
-                                                contentPadding = PaddingValues(0.dp)
-                                            ) {
-                                                Text("Dismiss / Verify", fontSize = 12.sp, color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
                         AnomalyType.DUPLICATE_ENTRY -> {
-                            // DUPLICATE ATTENDANCE CARD
                             Card(
                                 shape = RoundedCornerShape(16.dp),
                                 colors = CardDefaults.cardColors(containerColor = Color.White),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFCDD2)),
+                                border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFFFFCDD2)),
                                 elevation = CardDefaults.cardElevation(2.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            Surface(shape = CircleShape, color = Color(0xFFFFEBEE), modifier = Modifier.size(32.dp)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                            Surface(shape = CircleShape, color = Color(0xFFFFEBEE), modifier = Modifier.size(36.dp)) {
                                                 Box(contentAlignment = Alignment.Center) {
-                                                    Icon(Icons.Default.ContentCopy, null, tint = Color(0xFFD32F2F), modifier = Modifier.size(16.dp))
+                                                    Icon(Icons.Default.Warning, null, tint = Color(0xFFD32F2F), modifier = Modifier.size(20.dp))
                                                 }
                                             }
                                             Column {
-                                                Text(anomaly.title, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                                Text(anomaly.title, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                                                 Text("Worker: ${anomaly.affectedWorkers.firstOrNull()?.name ?: "Unknown"}", fontSize = 12.sp, color = Color.Gray)
                                             }
                                         }
                                         Surface(shape = RoundedCornerShape(6.dp), color = Color(0xFFFFEBEE)) {
-                                            Text(anomaly.badgeLabel, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFFD32F2F))
+                                            Text(anomaly.badgeLabel, modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFFD32F2F))
                                         }
                                     }
 
-                                    Text(anomaly.explanation, fontSize = 11.sp, color = Color.Gray)
-
-                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                        Text("Wage Over-claim Risk: ₹${anomaly.estimatedWageRisk.toInt()}", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Color(0xFFD32F2F))
-                                        Button(
-                                            onClick = {
-                                                anomaly.status = "RESOLVED"
-                                                Toast.makeText(context, "Duplicate entry resolved! Only single mark kept.", Toast.LENGTH_SHORT).show()
-                                            },
-                                            shape = RoundedCornerShape(8.dp),
-                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
-                                            modifier = Modifier.height(32.dp),
-                                            contentPadding = PaddingValues(horizontal = 10.dp)
-                                        ) {
-                                            Text(if (anomaly.status == "RESOLVED") "Resolved ✓" else "Keep Single Mark", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                        }
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = Color(0xFFFAFAFA),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(anomaly.explanation, modifier = Modifier.padding(10.dp), fontSize = 12.sp, color = Color(0xFF424242))
                                     }
-                                }
-                            }
-                        }
 
-                        AnomalyType.UNUSUAL_TIME -> {
-                            // UNUSUAL TIME OUTLIER CARD
-                            Card(
-                                shape = RoundedCornerShape(16.dp),
-                                colors = CardDefaults.cardColors(containerColor = Color.White),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFBBDEFB)),
-                                elevation = CardDefaults.cardElevation(2.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            Surface(shape = CircleShape, color = Color(0xFFE3F2FD), modifier = Modifier.size(32.dp)) {
-                                                Box(contentAlignment = Alignment.Center) {
-                                                    Icon(Icons.Default.Schedule, null, tint = Color(0xFF1976D2), modifier = Modifier.size(16.dp))
+                                        Text("Over-claim Risk: ₹${anomaly.estimatedWageRisk.toInt()}", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color(0xFFD32F2F))
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            if (anomaly.status != "FROZEN" && anomaly.status != "RESOLVED") {
+                                                Button(
+                                                    onClick = {
+                                                        anomaly.status = "FROZEN"
+                                                        Toast.makeText(context, "Payout Frozen for ${anomaly.affectedWorkers.firstOrNull()?.name}!", Toast.LENGTH_SHORT).show()
+                                                    },
+                                                    shape = RoundedCornerShape(8.dp),
+                                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F)),
+                                                    modifier = Modifier.height(34.dp),
+                                                    contentPadding = PaddingValues(horizontal = 10.dp)
+                                                ) {
+                                                    Text("Freeze Payout", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                                 }
                                             }
-                                            Column {
-                                                Text(anomaly.title, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                                Text("Worker: ${anomaly.affectedWorkers.firstOrNull()?.name ?: "Unknown"}", fontSize = 12.sp, color = Color.Gray)
+                                            Button(
+                                                onClick = {
+                                                    anomaly.status = "RESOLVED"
+                                                    Toast.makeText(context, "Duplicate entry verified and cleared.", Toast.LENGTH_SHORT).show()
+                                                },
+                                                shape = RoundedCornerShape(8.dp),
+                                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
+                                                modifier = Modifier.height(34.dp),
+                                                contentPadding = PaddingValues(horizontal = 10.dp)
+                                            ) {
+                                                Text(if (anomaly.status == "RESOLVED") "Resolved ✓" else "Verify & Clear", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                             }
-                                        }
-                                        Surface(shape = RoundedCornerShape(6.dp), color = Color(0xFFE3F2FD)) {
-                                            Text(anomaly.badgeLabel, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1976D2))
-                                        }
-                                    }
-
-                                    Text(anomaly.explanation, fontSize = 11.sp, color = Color.Gray)
-
-                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                                        OutlinedButton(
-                                            onClick = {
-                                                anomaly.status = "RESOLVED"
-                                                Toast.makeText(context, "Shift verified and approved.", Toast.LENGTH_SHORT).show()
-                                            },
-                                            shape = RoundedCornerShape(8.dp),
-                                            modifier = Modifier.height(32.dp),
-                                            contentPadding = PaddingValues(horizontal = 10.dp)
-                                        ) {
-                                            Text(if (anomaly.status == "RESOLVED") "Approved ✓" else "Verify Night Shift", fontSize = 11.sp, color = Color(0xFF1976D2), fontWeight = FontWeight.Bold)
                                         }
                                     }
                                 }
@@ -564,40 +379,61 @@ fun AIAttendanceAnomalyScreen(navController: NavController, viewModel: WorkerVie
                         }
 
                         AnomalyType.GHOST_WORKER -> {
-                            // GHOST WORKER CARD
                             Card(
                                 shape = RoundedCornerShape(16.dp),
                                 colors = CardDefaults.cardColors(containerColor = Color.White),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFE0B2)),
+                                border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFFFFE0B2)),
                                 elevation = CardDefaults.cardElevation(2.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            Surface(shape = CircleShape, color = Color(0xFFFFF3E0), modifier = Modifier.size(32.dp)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                            Surface(shape = CircleShape, color = Color(0xFFFFF3E0), modifier = Modifier.size(36.dp)) {
                                                 Box(contentAlignment = Alignment.Center) {
-                                                    Icon(Icons.Default.PersonOff, null, tint = Color(0xFFE65100), modifier = Modifier.size(16.dp))
+                                                    Icon(Icons.Default.PersonOff, null, tint = Color(0xFFE65100), modifier = Modifier.size(20.dp))
                                                 }
                                             }
                                             Column {
-                                                Text(anomaly.title, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                                Text(anomaly.title, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                                                 Text("Worker: ${anomaly.affectedWorkers.firstOrNull()?.name ?: "Unknown"}", fontSize = 12.sp, color = Color.Gray)
                                             }
                                         }
                                         Surface(shape = RoundedCornerShape(6.dp), color = Color(0xFFFFF3E0)) {
-                                            Text(anomaly.badgeLabel, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFFE65100))
+                                            Text(anomaly.badgeLabel, modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFFE65100))
                                         }
                                     }
 
-                                    Text(anomaly.explanation, fontSize = 11.sp, color = Color.Gray)
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = Color(0xFFFAFAFA),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(anomaly.explanation, modifier = Modifier.padding(10.dp), fontSize = 12.sp, color = Color(0xFF424242))
+                                    }
+
+                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                        Text("Risk Confidence: ${anomaly.riskConfidence}%", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color(0xFFE65100))
+                                        Button(
+                                            onClick = {
+                                                anomaly.status = "RESOLVED"
+                                                Toast.makeText(context, "Ghost worker status verified.", Toast.LENGTH_SHORT).show()
+                                            },
+                                            shape = RoundedCornerShape(8.dp),
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
+                                            modifier = Modifier.height(34.dp),
+                                            contentPadding = PaddingValues(horizontal = 10.dp)
+                                        ) {
+                                            Text(if (anomaly.status == "RESOLVED") "Resolved ✓" else "Verify & Clear", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
                 }
             } else {
-                // Empty state before scan
+                // Pre-audit state
                 Card(
                     shape = RoundedCornerShape(16.dp),
                     colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -615,7 +451,7 @@ fun AIAttendanceAnomalyScreen(navController: NavController, viewModel: WorkerVie
                         }
                         Text("Audit Ready to Run", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                         Text(
-                            "Tap 'Run AI Attendance Audit' above to scan clock-in timestamps, detect batch proxy patterns, and protect farm payroll.",
+                            "Tap 'Run AI Attendance Audit' above to scan database attendance for duplicate marks and ghost worker claims.",
                             fontSize = 12.sp,
                             color = Color.Gray,
                             textAlign = TextAlign.Center,
