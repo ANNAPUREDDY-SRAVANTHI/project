@@ -48,6 +48,22 @@ const API = (() => {
   async function getAllAttendance() { try { const r = await http("GET","api/attendance/"); return r.ok ? await r.json() : []; } catch { return []; } }
   async function submitAttendance(rec) {
     try {
+      // Record audit event for Anomaly Detection
+      try {
+        const log = JSON.parse(localStorage.getItem('smartfarm_att_audit_log') || '[]');
+        const now = new Date();
+        log.push({
+          worker: rec.worker,
+          date: rec.date,
+          status: rec.status,
+          timestamp: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          hour: now.getHours(),
+          minute: now.getMinutes(),
+          timeRaw: Date.now()
+        });
+        localStorage.setItem('smartfarm_att_audit_log', JSON.stringify(log));
+      } catch (e) {}
+
       const r = await http("POST", "api/attendance/", rec);
       if (r.ok) return true;
       const fresh = await getAllAttendance();

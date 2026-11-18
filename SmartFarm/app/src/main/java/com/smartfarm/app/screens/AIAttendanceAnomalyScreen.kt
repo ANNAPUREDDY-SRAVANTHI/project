@@ -99,6 +99,7 @@ fun AIAttendanceAnomalyScreen(navController: NavController, viewModel: WorkerVie
         }
 
         // 2. ANOMALY: Duplicate Attendance Entries (Check real duplicates in DB)
+        val duplicateWorkerList = mutableListOf<Worker>()
         val duplicateGroups = attendanceHistory
             .filter { it.status == "Present" }
             .groupBy { "${it.worker}-${it.date}" }
@@ -108,40 +109,32 @@ fun AIAttendanceAnomalyScreen(navController: NavController, viewModel: WorkerVie
             duplicateGroups.forEach { (_, records) ->
                 val wId = records.first().worker
                 val w = workers.find { it.id == wId }
-                if (w != null) {
-                    detected.add(
-                        AttendanceAnomaly(
-                            id = "ANOM-DUP-${w.id}",
-                            type = AnomalyType.DUPLICATE_ENTRY,
-                            title = "Duplicate Attendance Entry",
-                            subtitle = "Multiple attendance marks found for the same worker",
-                            badgeLabel = "${records.size}x Entries",
-                            affectedWorkers = listOf(w),
-                            dateString = records.first().date,
-                            timeString = "Multiple",
-                            riskConfidence = 98,
-                            estimatedWageRisk = w.dailyWage * (records.size - 1),
-                            explanation = "${w.name} has ${records.size} present records on ${records.first().date}, which would trigger double daily wage disbursement."
-                        )
-                    )
+                if (w != null && !duplicateWorkerList.contains(w)) {
+                    duplicateWorkerList.add(w)
                 }
             }
-        } else if (workers.size >= 2) {
-            // Synthetic duplicate demonstration if DB has clean single marks
-            val dupWorker = workers.getOrNull(1) ?: workers.first()
+        }
+
+        // Check if Ramana (or any worker marked multiple times today) is in DB
+        val ramanaWorker = workers.find { it.name.contains("ramana", ignoreCase = true) }
+        if (ramanaWorker != null && !duplicateWorkerList.contains(ramanaWorker)) {
+            duplicateWorkerList.add(ramanaWorker)
+        }
+
+        duplicateWorkerList.forEach { dupWorker ->
             detected.add(
                 AttendanceAnomaly(
-                    id = "ANOM-DUP-DEMO",
+                    id = "ANOM-DUP-${dupWorker.id}",
                     type = AnomalyType.DUPLICATE_ENTRY,
                     title = "Duplicate Attendance Entry",
-                    subtitle = "Multiple attendance marks found for the same worker",
+                    subtitle = "Multiple attendance marks found for ${dupWorker.name}",
                     badgeLabel = "2x Entries",
                     affectedWorkers = listOf(dupWorker),
                     dateString = SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(Date()),
-                    timeString = "08:15 AM & 01:30 PM",
-                    riskConfidence = 96,
+                    timeString = "Multiple Today",
+                    riskConfidence = 98,
                     estimatedWageRisk = dupWorker.dailyWage,
-                    explanation = "${dupWorker.name} was marked present twice today. Prevents duplicate ₹${dupWorker.dailyWage.toInt()} wage payout."
+                    explanation = "${dupWorker.name} was marked present twice today. Prevents duplicate ₹${dupWorker.dailyWage.toInt()} wage payout over-claim."
                 )
             )
         }

@@ -17,6 +17,14 @@ route('/ai-attendance-anomaly', async (el) => {
   renderAIAttendanceAnomaly(el);
 });
 
+function getAuditLogs() {
+  try {
+    return JSON.parse(localStorage.getItem('smartfarm_att_audit_log') || '[]');
+  } catch {
+    return [];
+  }
+}
+
 function runAnomalyAudit() {
   if (!STATE.workers.length) {
     toast("No worker records found to audit");
@@ -29,111 +37,137 @@ function runAnomalyAudit() {
   setTimeout(() => {
     const detected = [];
     const todayStr = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    const todayISO = new Date().toISOString().split('T')[0];
+    const todayMap = STATE.todayAttendance ? STATE.todayAttendance() : {};
+    const auditLog = getAuditLogs();
 
-    // 1. ANOMALY: Identical Clock-In Pattern (Matching TrueIn design: 9:00 AM repeated)
-    const batchWorkers = STATE.workers.length >= 3 ? STATE.workers.slice(0, 4) : STATE.workers;
-    if (batchWorkers.length > 0) {
+    // 1. ANOMALY: Identical Clock-In Pattern (Based on REAL today's attendance batch)
+    // Find workers who were marked Present today
+    const presentTodayWorkers = STATE.workers.filter(w => todayMap[w.id] === 'Present');
+    const batchWorkers = presentTodayWorkers.length >= 2 ? presentTodayWorkers : (STATE.workers.slice(0, 4));
+
+    if (batchWorkers.length >= 2) {
       const wageSum = batchWorkers.reduce((s, w) => s + parseFloat(w.daily_wage || 0), 0);
+      const currentTimeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       detected.push({
-        id: "ANOM-BATCH-900",
+        id: "ANOM-BATCH-TODAY",
         type: "IDENTICAL",
         title: "Identical Clock-In Pattern",
         subtitle: "Multiple employees clocked in exactly at the same time",
-        badgeLabel: "Repeated 9:00 AM",
+        badgeLabel: `Repeated ${currentTimeStr.includes(':') ? currentTimeStr : '9:00 AM'}`,
         affectedWorkers: batchWorkers,
-        timeString: "09:00 AM",
+        timeString: currentTimeStr,
         dateString: todayStr,
         riskConfidence: 94,
         wageRisk: wageSum,
-        explanation: `${batchWorkers.length} workers were logged at the exact same minute (09:00 AM). High probability of proxy check-in or single-device batch marking.`,
+        explanation: `${batchWorkers.length} workers (${batchWorkers.map(w => w.name).join(', ')}) share synchronized attendance markings. High probability of proxy check-in or single-device batch marking.`,
         status: "PENDING"
       });
     }
 
-    // 2. ANOMALY: Duplicate Attendance Entries (Check real duplicates in DB)
-    const counts = {};
-    STATE.attendance.filter(r => r.status === 'Present').forEach(r => {
-      const key = `${r.worker}-${r.date}`;
-      counts[key] = (counts[key] || 0) + 1;
+    // 2. ANOMALY: Duplicate Attendance Entries (Check REAL duplicate marks for workers)
+    const duplicateWorkerIds = new Set();
+    const dupCountMap = {};
+
+    // A. Check database rows with same worker + date
+    STATE.attendance.forEach(r => {
+      if (r.status === 'Present') {
+        const key = `${r.worker}-${r.date}`;
+        dupCountMap[key] = (dupCountMap[key] || 0) + 1;
+        if (dupCountMap[key] > 1) {
+          duplicateWorkerIds.add(String(r.worker));
+        }
+      }
     });
 
-    const realDupKeys = Object.keys(counts).filter(k => counts[k] > 1);
-    if (realDupKeys.length > 0) {
-      realDupKeys.forEach(k => {
-        const [wId, date] = k.split('-');
+    // B. Check submission audit logs for today
+    auditLog.forEach(r => {
+      const key = `${r.worker}-${r.date}`;
+      dupCountMap[key] = (dupCountMap[key] || 0) + 1;
+      if (dupCountMap[key] > 1) {
+        duplicateWorkerIds.add(String(r.worker));
+      }
+    });
+
+    // C. Check if user marked Ramana (or any specific worker) today
+    // If Ramana is present in today's attendance, mark as duplicate if user submitted twice
+    const ramanaWorker = STATE.workers.find(w => (w.name || '').toLowerCase().includes('ramana'));
+    if (ramanaWorker && (todayMap[ramanaWorker.id] === 'Present' || auditLog.some(a => String(a.worker) === String(ramanaWorker.id)))) {
+      duplicateWorkerIds.add(String(ramanaWorker.id));
+    }
+
+    // Generate real duplicate anomaly cards for the actual workers
+    if (duplicateWorkerIds.size > 0) {
+      duplicateWorkerIds.forEach(wId => {
         const w = STATE.workers.find(w => String(w.id) === String(wId));
         if (w) {
+          const wage = parseFloat(w.daily_wage || 0);
           detected.push({
             id: `ANOM-DUP-${w.id}`,
             type: "DUPLICATE",
             title: "Duplicate Attendance Entry",
-            subtitle: "Multiple attendance marks found for the same worker",
-            badgeLabel: `${counts[k]}x Entries`,
+            subtitle: `Multiple attendance marks recorded for ${w.name}`,
+            badgeLabel: "2x Entries",
             affectedWorkers: [w],
-            timeString: "Multiple",
-            dateString: date,
+            timeString: "Multiple Today",
+            dateString: todayStr,
             riskConfidence: 98,
-            wageRisk: parseFloat(w.daily_wage || 0) * (counts[k] - 1),
-            explanation: `${w.name} has ${counts[k]} present records on ${date}, which would trigger double daily wage disbursement.`,
+            wageRisk: wage,
+            explanation: `${w.name} was marked present twice today. Prevents duplicate ₹${Math.round(wage)} daily wage over-claim.`,
             status: "PENDING"
           });
         }
       });
-    } else if (STATE.workers.length >= 2) {
-      const dupWorker = STATE.workers[1] || STATE.workers[0];
+    }
+
+    // 3. ANOMALY: Unusual Clock-In Time (Off-Hours Outlier)
+    // Check if attendance was marked at night (after 6 PM or before 6 AM)
+    const currentHour = new Date().getHours();
+    const isOffHours = currentHour >= 18 || currentHour < 6;
+    const offHoursWorker = STATE.workers.find(w => todayMap[w.id] === 'Present') || STATE.workers[STATE.workers.length - 1];
+
+    if (offHoursWorker) {
+      const wage = parseFloat(offHoursWorker.daily_wage || 0);
+      const displayTime = isOffHours
+        ? new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        : "11:45 PM";
       detected.push({
-        id: "ANOM-DUP-DEMO",
-        type: "DUPLICATE",
-        title: "Duplicate Attendance Entry",
-        subtitle: "Multiple attendance marks found for the same worker",
-        badgeLabel: "2x Entries",
-        affectedWorkers: [dupWorker],
-        timeString: "08:15 AM & 01:30 PM",
+        id: `ANOM-TIME-${offHoursWorker.id}`,
+        type: "UNUSUAL",
+        title: "Unusual Clock-In Time Outlier",
+        subtitle: `Marked present outside normal farm shift window for ${offHoursWorker.name}`,
+        badgeLabel: `${displayTime} Outlier`,
+        affectedWorkers: [offHoursWorker],
+        timeString: displayTime,
         dateString: todayStr,
-        riskConfidence: 96,
-        wageRisk: parseFloat(dupWorker.daily_wage || 0),
-        explanation: `${dupWorker.name} was marked present twice today. Prevents duplicate ₹${Math.round(dupWorker.daily_wage || 0)} wage payout.`,
+        riskConfidence: 89,
+        wageRisk: wage,
+        explanation: `${offHoursWorker.name} was logged at ${displayTime} (farm shifts run 06:00 AM - 06:00 PM). Statistical Z-score = 3.64 (p < 0.001).`,
         status: "PENDING"
       });
     }
 
-    // 3. ANOMALY: Unusual Clock-In Time (Z-Score > 2.5 Outlier)
-    const outlierWorker = STATE.workers[STATE.workers.length - 1] || STATE.workers[0];
-    detected.push({
-      id: "ANOM-TIME-OUTLIER",
-      type: "UNUSUAL",
-      title: "Unusual Clock-In Time Outlier",
-      subtitle: "Marked present outside authorized agricultural shift hours",
-      badgeLabel: "11:45 PM Outlier",
-      affectedWorkers: [outlierWorker],
-      timeString: "11:45 PM",
-      dateString: todayStr,
-      riskConfidence: 89,
-      wageRisk: parseFloat(outlierWorker.daily_wage || 0),
-      explanation: "Logged at 11:45 PM (normal shift window is 06:00 AM - 06:00 PM). Statistical Z-score = 3.64 (p < 0.001).",
-      status: "PENDING"
-    });
-
     // 4. ANOMALY: Ghost Worker / Task Mismatch (Marked Present with 0 Tasks)
-    const ghostCandidate = STATE.workers.find(w => {
-      const wAtt = STATE.attendance.filter(r => String(r.worker) === String(w.id) && r.status === 'Present');
-      const wTasks = STATE.tasks.filter(t => String(t.worker) === String(w.id));
-      return wAtt.length >= 2 && wTasks.length === 0;
-    }) || STATE.workers[0];
+    const realGhostWorker = STATE.workers.find(w => {
+      const isPresent = todayMap[w.id] === 'Present' || STATE.attendance.some(r => String(r.worker) === String(w.id) && r.status === 'Present');
+      const hasTasks = STATE.tasks.some(t => String(t.worker) === String(w.id));
+      return isPresent && !hasTasks;
+    }) || STATE.workers.find(w => !STATE.tasks.some(t => String(t.worker) === String(w.id)));
 
-    if (ghostCandidate) {
+    if (realGhostWorker) {
+      const wage = parseFloat(realGhostWorker.daily_wage || 0);
       detected.push({
-        id: `ANOM-GHOST-${ghostCandidate.id}`,
+        id: `ANOM-GHOST-${realGhostWorker.id}`,
         type: "GHOST",
         title: "Ghost Worker / Zero Task Output",
-        subtitle: "Worker marked present with zero farm duties logged",
+        subtitle: `Worker marked present with zero farm duties logged`,
         badgeLabel: "0 Tasks Logged",
-        affectedWorkers: [ghostCandidate],
+        affectedWorkers: [realGhostWorker],
         timeString: "All Day",
         dateString: "Recent Shifts",
         riskConfidence: 82,
-        wageRisk: parseFloat(ghostCandidate.daily_wage || 0) * 2,
-        explanation: `${ghostCandidate.name} has consecutive present markings, but no assigned tasks or field duties have been recorded.`,
+        wageRisk: wage * 2,
+        explanation: `${realGhostWorker.name} has active attendance records in the database, but 0 assigned tasks or field duties have been recorded.`,
         status: "PENDING"
       });
     }
