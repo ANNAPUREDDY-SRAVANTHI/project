@@ -28,6 +28,14 @@ route('/attendance-dashboard', async (el) => {
           <div class="stat-label">Unmarked</div>
         </div>
       </div>
+      <button class="action-card" onclick="navigate('/ai-attendance-anomaly')">
+        <div class="action-icon-wrap" style="background:#FFF3E0;color:#E65100">${ICONS.security}</div>
+        <div class="action-text">
+          <div class="action-title">AI Anomaly Detector</div>
+          <div class="action-desc">Audit clock-ins for proxy & duplicates</div>
+        </div>
+        <div class="action-chevron">${ICONS.chevron}</div>
+      </button>
       <button class="action-card" onclick="navigate('/mark-attendance')">
         <div class="action-icon-wrap">${ICONS.fact_check}</div>
         <div class="action-text">

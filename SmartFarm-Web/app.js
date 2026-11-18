@@ -34,6 +34,8 @@ const ICONS = {
   trending: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6l2.29 2.29-4.88 4.88-4-4L2 16.59 3.41 18l6-6 4 4 6.3-6.29L22 12V6z"/></svg>`,
   sparkle: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 9l1.25-2.75L23 5l-2.75-1.25L19 1l-1.25 2.75L15 5l2.75 1.25L19 9zm-7.5.5L9 4 6.5 9.5 1 12l5.5 2.5L9 20l2.5-5.5L17 12l-5.5-2.5zM19 15l-1.25 2.75L15 19l2.75 1.25L19 23l1.25-2.75L23 19l-2.75-1.25L19 15z"/></svg>`,
   psychology: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12c0 2.85 1.2 5.42 3.12 7.24L4 21h4v-1.12C8.63 19.95 9.3 20 10 20h2v2h2v-2h1c2.76 0 5-2.24 5-5 0-1.85-.99-3.46-2.47-4.34C17.82 9.77 18 8.91 18 8c0-3.31-2.69-6-6-6zm0 2c2.21 0 4 1.79 4 4 0 .73-.2 1.41-.55 2H13v2h2.5c1.38 0 2.5 1.12 2.5 2.5S16.88 17 15.5 17H12v-2h-2v2H8.5c-.83 0-1.54-.42-1.94-1.06L8 14h2v-2H6.27C6.09 11.39 6 10.71 6 10c0-3.31 2.69-6 6-6z"/></svg>`,
+  security: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/></svg>`,
+  warning: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>`,
 };
 
 // ── State Store (mirrors WorkerViewModel) ─────────────────────

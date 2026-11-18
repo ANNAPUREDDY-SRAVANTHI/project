@@ -81,6 +81,7 @@ fun AdminDashboard(navController: NavController, viewModel: WorkerViewModel) {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 AdminActionRow("Manage Workers", "Add, edit or remove labor", Icons.Default.People) { navController.navigate("workerList") }
                 AdminActionRow("AI Workforce Optimizer", "Smart scheduling & labor analytics", Icons.Default.AutoAwesome) { navController.navigate("aiWorkforceOptimizer") }
+                AdminActionRow("AI Attendance Anomaly Detector", "Identify suspicious clock-ins & fraud", Icons.Default.Security) { navController.navigate("aiAttendanceAnomaly") }
                 AdminActionRow("Task Assignment", "Assign daily work to labor", Icons.Default.Assignment) { navController.navigate("adminTaskManagement") }
                 AdminActionRow("Attendance", "Mark daily attendance", Icons.Default.QrCodeScanner) { navController.navigate("attendanceDashboard") }
                 AdminActionRow("Finance Summary", "Salary and wage reports", Icons.Default.Payments) { navController.navigate("financeSummary") }

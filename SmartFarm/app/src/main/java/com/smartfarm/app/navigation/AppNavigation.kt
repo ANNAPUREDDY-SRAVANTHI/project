@@ -34,6 +34,7 @@ fun AppNavigation() {
         // --- ADMIN SECTION ---
         composable("adminDashboard") { AdminDashboard(navController, workerViewModel) }
         composable("aiWorkforceOptimizer") { AIWorkforceOptimizerScreen(navController, workerViewModel) }
+        composable("aiAttendanceAnomaly") { AIAttendanceAnomalyScreen(navController, workerViewModel) }
         composable("workerList") { WorkerListScreen(navController, workerViewModel) }
         composable("addWorker") { AddWorkerScreen(navController, workerViewModel) }
         composable("adminTaskManagement") { AdminTaskScreen(navController, workerViewModel) }

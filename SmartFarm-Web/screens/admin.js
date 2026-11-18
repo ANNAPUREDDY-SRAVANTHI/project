@@ -62,6 +62,14 @@ function renderAdminDashboard(el) {
         </div>
         <div class="action-chevron">${ICONS.chevron}</div>
       </button>
+      <button class="action-card" onclick="navigate('/ai-attendance-anomaly')">
+        <div class="action-icon-wrap" style="background:#FFF3E0;color:#E65100">${ICONS.security}</div>
+        <div class="action-text">
+          <div class="action-title">AI Attendance Anomaly Detector</div>
+          <div class="action-desc">Identify suspicious clock-ins & fraud</div>
+        </div>
+        <div class="action-chevron">${ICONS.chevron}</div>
+      </button>
       <button class="action-card" onclick="navigate('/admin-tasks')">
         <div class="action-icon-wrap">${ICONS.assignment}</div>
         <div class="action-text">

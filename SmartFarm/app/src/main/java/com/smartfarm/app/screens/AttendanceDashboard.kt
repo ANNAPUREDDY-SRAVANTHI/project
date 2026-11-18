@@ -109,6 +109,14 @@ fun AttendanceDashboard(navController: NavController, viewModel: WorkerViewModel
 
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 AttendanceDashActionRow(
+                    title = "AI Anomaly Detector",
+                    description = "Audit clock-ins for proxy & duplicates",
+                    icon = Icons.Default.Security
+                ) {
+                    navController.navigate("aiAttendanceAnomaly")
+                }
+
+                AttendanceDashActionRow(
                     title = "Mark Attendance",
                     description = "Update worker status for today",
                     icon = Icons.Default.QrCodeScanner
