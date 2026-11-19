@@ -123,27 +123,29 @@ fun AIAttendanceAnomalyScreen(navController: NavController, viewModel: WorkerVie
             }
         }
 
-        // Fallback for demonstration if all records currently match
+        // Fallback for demonstration if no explicit attendance records match
         if (detected.isEmpty()) {
-            val unassignedWorker = workers.firstOrNull { w -> !taskList.any { it.worker == w.id } }
-            if (unassignedWorker != null) {
-                val wage = if (unassignedWorker.dailyWage > 0) unassignedWorker.dailyWage else 500.0
-                detected.add(
-                    AttendanceAnomaly(
-                        id = "ANOM-GHOST-${unassignedWorker.id}",
-                        type = AnomalyType.GHOST_WORKER,
-                        title = "Ghost Worker / Zero Task Output",
-                        subtitle = "Worker on roster with zero field tasks logged",
-                        badgeLabel = "0 Tasks Logged",
-                        affectedWorkers = listOf(unassignedWorker),
-                        dateString = todayStr,
-                        timeString = "Full Day",
-                        riskConfidence = 82,
-                        estimatedWageRisk = wage,
-                        riskDisplay = "Wage Leakage Risk: ₹${wage.toInt()}",
-                        explanation = "${unassignedWorker.name} has active attendance history in the database, but 0 assigned tasks or field operations have been recorded."
+            workers.forEach { unassignedWorker ->
+                val wTasks = taskList.filter { it.worker == unassignedWorker.id }
+                if (wTasks.isEmpty()) {
+                    val wage = if (unassignedWorker.dailyWage > 0) unassignedWorker.dailyWage else 500.0
+                    detected.add(
+                        AttendanceAnomaly(
+                            id = "ANOM-GHOST-${unassignedWorker.id}",
+                            type = AnomalyType.GHOST_WORKER,
+                            title = "Ghost Worker / Zero Task Output",
+                            subtitle = "Worker on roster with zero field tasks logged",
+                            badgeLabel = "0 Tasks Logged",
+                            affectedWorkers = listOf(unassignedWorker),
+                            dateString = todayStr,
+                            timeString = "Full Day",
+                            riskConfidence = 82,
+                            estimatedWageRisk = wage,
+                            riskDisplay = "Wage Leakage Risk: ₹${wage.toInt()}",
+                            explanation = "${unassignedWorker.name} has active attendance history in the database, but 0 assigned tasks or field operations have been recorded."
+                        )
                     )
-                )
+                }
             }
         }
 

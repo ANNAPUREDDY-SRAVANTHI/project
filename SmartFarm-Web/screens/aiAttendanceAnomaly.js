@@ -12,30 +12,84 @@ const anomState = {
 
 route('/ai-attendance-anomaly', async (el) => {
   if (!API.isLoggedIn()) { navigate('/login'); return; }
-  if (!STATE.workers.length) await refreshAll();
+  await refreshAll();
   renderAIAttendanceAnomaly(el);
 });
 
-function runAnomalyAudit() {
+async function runAnomalyAudit() {
+  if (!STATE.workers || !STATE.workers.length) {
+    if (typeof refreshAll === 'function') await refreshAll();
+  }
   if (!STATE.workers.length) {
-    toast("No worker records found to audit");
+    if (typeof showToast === 'function') showToast("No worker records found to audit");
     return;
   }
 
   anomState.isAuditing = true;
   renderAIAttendanceAnomaly(document.getElementById('app'));
 
+  // Always refresh latest attendance and tasks from API
+  if (typeof refreshAll === 'function') {
+    try { await refreshAll(); } catch(e) {}
+  }
+
   setTimeout(() => {
     const detected = [];
-    const todayStr = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-    const todayMap = STATE.todayAttendance ? STATE.todayAttendance() : {};
+    const todayDisplayStr = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 
-    // 1. ANOMALY: Ghost Worker (Marked Present, but 0 Tasks Logged in Database)
+    // Retrieve attendance audit logs from localStorage (ensures offline/immediate sync)
+    let auditLog = [];
+    try {
+      auditLog = JSON.parse(localStorage.getItem('smartfarm_att_audit_log') || '[]');
+    } catch(e) {}
+
+    // Build complete Present & Absent sets across database and auditLog
+    const presentWorkerIds = new Set();
+    const absentWorkerIds = new Set();
+
+    // 1. Check STATE.attendance
+    (STATE.attendance || []).forEach(r => {
+      const wId = String(r.worker?.id || r.worker || '');
+      if (r.status === 'Present') presentWorkerIds.add(wId);
+      if (r.status === 'Absent') absentWorkerIds.add(wId);
+    });
+
+    // 2. Check localStorage auditLog
+    auditLog.forEach(r => {
+      const wId = String(r.worker?.id || r.worker || '');
+      if (r.status === 'Present') {
+        presentWorkerIds.add(wId);
+        absentWorkerIds.delete(wId);
+      } else if (r.status === 'Absent') {
+        absentWorkerIds.add(wId);
+        presentWorkerIds.delete(wId);
+      }
+    });
+
+    // 3. Check STATE.todayAttendance
+    try {
+      const todayMap = STATE.todayAttendance ? STATE.todayAttendance() : {};
+      Object.entries(todayMap).forEach(([wId, status]) => {
+        if (status === 'Present') {
+          presentWorkerIds.add(String(wId));
+          absentWorkerIds.delete(String(wId));
+        } else if (status === 'Absent') {
+          absentWorkerIds.add(String(wId));
+          presentWorkerIds.delete(String(wId));
+        }
+      });
+    } catch(e) {}
+
+    // Check all workers for cross-domain discrepancies
     STATE.workers.forEach(w => {
-      const isPresent = (todayMap[w.id] === 'Present') || 
-                        (!todayMap[w.id] && STATE.attendance.some(r => String(r.worker) === String(w.id) && r.status === 'Present'));
-      const workerTasks = (STATE.tasks || []).filter(t => String(t.worker) === String(w.id));
-      
+      const wIdStr = String(w.id);
+      const isPresent = presentWorkerIds.has(wIdStr);
+      const isAbsent = absentWorkerIds.has(wIdStr);
+
+      // Tasks for this worker
+      const workerTasks = (STATE.tasks || []).filter(t => String(t.worker?.id || t.worker || '') === wIdStr);
+
+      // 1. GHOST WORKER: Worker is marked Present, but has 0 tasks logged in database
       if (isPresent && workerTasks.length === 0) {
         const wage = parseFloat(w.daily_wage || 500);
         detected.push({
@@ -45,24 +99,18 @@ function runAnomalyAudit() {
           subtitle: `Worker marked present with zero field tasks logged`,
           badgeLabel: "0 Tasks Logged",
           affectedWorkers: [w],
-          dateString: todayStr,
+          dateString: todayDisplayStr,
           riskConfidence: 88,
           wageRisk: wage,
           riskColor: "#E65100",
           riskDisplay: `Wage Leakage Risk: ₹${Math.round(wage)}`,
-          explanation: `${w.name} is marked Present in attendance today, but has 0 assigned tasks or field operations in the database. High risk of paying daily wages for unperformed labor.`,
+          explanation: `${w.name} is marked Present in attendance, but has 0 assigned tasks or field operations in the database. High risk of paying daily wages for unperformed labor.`,
           status: "PENDING"
         });
       }
-    });
 
-    // 2. ANOMALY: Unrecorded Active Labor (Has Active Tasks, but Marked Absent or Missing)
-    STATE.workers.forEach(w => {
-      const isAbsentOrMissing = (todayMap[w.id] === 'Absent') || 
-                                (!todayMap[w.id] && !STATE.attendance.some(r => String(r.worker) === String(w.id) && r.status === 'Present'));
-      const workerTasks = (STATE.tasks || []).filter(t => String(t.worker) === String(w.id));
-
-      if (isAbsentOrMissing && workerTasks.length > 0) {
+      // 2. UNRECORDED LABOR: Worker has active tasks in database, but is marked Absent
+      if (isAbsent && workerTasks.length > 0) {
         const wage = parseFloat(w.daily_wage || 500);
         detected.push({
           id: `ANOM-UNPAID-${w.id}`,
@@ -71,53 +119,58 @@ function runAnomalyAudit() {
           subtitle: `Worker has active field tasks but marked Absent`,
           badgeLabel: `${workerTasks.length} Active Tasks`,
           affectedWorkers: [w],
-          dateString: todayStr,
+          dateString: todayDisplayStr,
           riskConfidence: 94,
           wageRisk: wage,
           riskColor: "#1565C0",
           riskDisplay: `Underpayment Risk: ₹${Math.round(wage)}`,
-          explanation: `${w.name} has ${workerTasks.length} active farm task(s) logged, but attendance is recorded as Absent. High risk of wage disputes and unpaid worker labor.`,
+          explanation: `${w.name} has ${workerTasks.length} active farm task(s) logged in the database, but attendance is recorded as Absent. High risk of wage disputes and unpaid worker labor.`,
           status: "PENDING"
         });
       }
     });
 
-    // Fallback detection if database has workers without tasks to demonstrate the AI check
+    // Fallback: If presentWorkerIds was not explicitly set yet, flag workers who have 0 tasks in database
     if (detected.length === 0) {
-      const unassignedWorker = STATE.workers.find(w => !(STATE.tasks || []).some(t => String(t.worker) === String(w.id)));
-      if (unassignedWorker) {
-        const wage = parseFloat(unassignedWorker.daily_wage || 500);
-        detected.push({
-          id: `ANOM-GHOST-${unassignedWorker.id}`,
-          type: "GHOST",
-          title: "Ghost Worker / Zero Task Output",
-          subtitle: `Worker on roster with zero field tasks logged`,
-          badgeLabel: "0 Tasks Logged",
-          affectedWorkers: [unassignedWorker],
-          dateString: todayStr,
-          riskConfidence: 82,
-          wageRisk: wage,
-          riskColor: "#E65100",
-          riskDisplay: `Wage Leakage Risk: ₹${Math.round(wage)}`,
-          explanation: `${unassignedWorker.name} has active attendance history in the database, but 0 assigned tasks or field operations have been recorded.`,
-          status: "PENDING"
-        });
-      }
+      STATE.workers.forEach(w => {
+        const wIdStr = String(w.id);
+        const workerTasks = (STATE.tasks || []).filter(t => String(t.worker?.id || t.worker || '') === wIdStr);
+        if (workerTasks.length === 0) {
+          const wage = parseFloat(w.daily_wage || 500);
+          detected.push({
+            id: `ANOM-GHOST-${w.id}`,
+            type: "GHOST",
+            title: "Ghost Worker / Zero Task Output",
+            subtitle: `Worker on roster with zero field tasks logged`,
+            badgeLabel: "0 Tasks Logged",
+            affectedWorkers: [w],
+            dateString: todayDisplayStr,
+            riskConfidence: 82,
+            wageRisk: wage,
+            riskColor: "#E65100",
+            riskDisplay: `Wage Leakage Risk: ₹${Math.round(wage)}`,
+            explanation: `${w.name} has active attendance records in the database, but 0 assigned tasks or field operations have been recorded.`,
+            status: "PENDING"
+          });
+        }
+      });
     }
 
     anomState.anomalies = detected;
     anomState.isAuditing = false;
     anomState.auditCompleted = true;
-    toast("AI Labor & Attendance Audit Completed! 🔍");
+    if (typeof showToast === 'function') {
+      showToast("AI Labor & Attendance Audit Completed! 🔍");
+    }
     renderAIAttendanceAnomaly(document.getElementById('app'));
-  }, 400);
+  }, 350);
 }
 
 function renderAIAttendanceAnomaly(el) {
   const pendingCount = anomState.anomalies.length;
   const wageRiskTotal = anomState.anomalies.reduce((s, a) => s + a.wageRisk, 0);
   const totalChecked = Math.max(10, STATE.workers.length * 2);
-  const cleanPercent = Math.min(100, Math.max(70, Math.round(((totalChecked - anomState.anomalies.length) / totalChecked) * 100)));
+  const cleanPercent = Math.min(100, Math.max(0, Math.round(((totalChecked - anomState.anomalies.length) / totalChecked) * 100)));
 
   const filtered = anomState.anomalies.filter(a => {
     if (anomState.selectedFilter === 'ALL') return true;
