@@ -1,6 +1,6 @@
 // ============================================================
 //  AI ATTENDANCE ANOMALY DETECTION SCREEN
-//  Real Cross-Domain Integrity ML: Attendance vs. Tasks
+//  Real Cross-Domain Integrity ML: Attendance vs. Daily Tasks
 // ============================================================
 
 const anomState = {
@@ -13,6 +13,7 @@ const anomState = {
 route('/ai-attendance-anomaly', async (el) => {
   if (!API.isLoggedIn()) { navigate('/login'); return; }
   await refreshAll();
+  anomState.selectedFilter = 'ALL';
   renderAIAttendanceAnomaly(el);
 });
 
@@ -26,6 +27,7 @@ async function runAnomalyAudit() {
   }
 
   anomState.isAuditing = true;
+  anomState.selectedFilter = 'ALL';
   renderAIAttendanceAnomaly(document.getElementById('app'));
 
   // Always refresh latest attendance and tasks from API
@@ -35,26 +37,34 @@ async function runAnomalyAudit() {
 
   setTimeout(() => {
     const detected = [];
+    const todayISOStr = (typeof todayISO === 'function') ? todayISO() : new Date().toISOString().split('T')[0];
     const todayDisplayStr = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 
-    // Retrieve attendance audit logs from localStorage (ensures offline/immediate sync)
+    // 1. Retrieve attendance audit logs from localStorage (ensures offline/immediate sync)
     let auditLog = [];
     try {
       auditLog = JSON.parse(localStorage.getItem('smartfarm_att_audit_log') || '[]');
+    } catch(e) {}
+
+    // 2. Retrieve tasks assigned today
+    let todayTasksMap = {};
+    try {
+      todayTasksMap = JSON.parse(localStorage.getItem('smartfarm_today_tasks') || '{}');
     } catch(e) {}
 
     // Build complete Present & Absent sets across database and auditLog
     const presentWorkerIds = new Set();
     const absentWorkerIds = new Set();
 
-    // 1. Check STATE.attendance
+    // A. Check STATE.attendance
     (STATE.attendance || []).forEach(r => {
       const wId = String(r.worker?.id || r.worker || '');
+      // If date matches today or if checking recent status
       if (r.status === 'Present') presentWorkerIds.add(wId);
       if (r.status === 'Absent') absentWorkerIds.add(wId);
     });
 
-    // 2. Check localStorage auditLog
+    // B. Check localStorage auditLog (most recent mark wins)
     auditLog.forEach(r => {
       const wId = String(r.worker?.id || r.worker || '');
       if (r.status === 'Present') {
@@ -66,7 +76,7 @@ async function runAnomalyAudit() {
       }
     });
 
-    // 3. Check STATE.todayAttendance
+    // C. Check STATE.todayAttendance
     try {
       const todayMap = STATE.todayAttendance ? STATE.todayAttendance() : {};
       Object.entries(todayMap).forEach(([wId, status]) => {
@@ -80,17 +90,31 @@ async function runAnomalyAudit() {
       });
     } catch(e) {}
 
-    // Check all workers for cross-domain discrepancies
+    // If still no workers found in present list (e.g. marked in another view),
+    // default all workers as active today to evaluate task assignment!
+    if (presentWorkerIds.size === 0 && absentWorkerIds.size === 0) {
+      STATE.workers.forEach(w => presentWorkerIds.add(String(w.id)));
+    }
+
+    // Now check every worker for cross-domain integrity:
     STATE.workers.forEach(w => {
       const wIdStr = String(w.id);
       const isPresent = presentWorkerIds.has(wIdStr);
       const isAbsent = absentWorkerIds.has(wIdStr);
 
-      // Tasks for this worker
-      const workerTasks = (STATE.tasks || []).filter(t => String(t.worker?.id || t.worker || '') === wIdStr);
+      // Check if this worker has a task assigned TODAY
+      const hasTodayTaskInLocal = !!todayTasksMap[w.id] || !!todayTasksMap[wIdStr];
+      const hasTodayTaskInDB = (STATE.tasks || []).some(t => {
+        const matchesWorker = String(t.worker?.id || t.worker || '') === wIdStr;
+        const matchesToday = !t.date || t.date === todayISOStr;
+        const isNotDone = !t.is_completed && !t.completed;
+        return matchesWorker && (matchesToday && isNotDone);
+      });
 
-      // 1. GHOST WORKER: Worker is marked Present, but has 0 tasks logged in database
-      if (isPresent && workerTasks.length === 0) {
+      const hasTaskToday = hasTodayTaskInLocal || hasTodayTaskInDB;
+
+      // 1. GHOST WORKER: Worker marked Present today, but has 0 tasks assigned today
+      if (isPresent && !hasTaskToday) {
         const wage = parseFloat(w.daily_wage || 500);
         detected.push({
           id: `ANOM-GHOST-${w.id}`,
@@ -104,61 +128,36 @@ async function runAnomalyAudit() {
           wageRisk: wage,
           riskColor: "#E65100",
           riskDisplay: `Wage Leakage Risk: ₹${Math.round(wage)}`,
-          explanation: `${w.name} is marked Present in attendance, but has 0 assigned tasks or field operations in the database. High risk of paying daily wages for unperformed labor.`,
+          explanation: `${w.name} was marked Present in attendance today, but has no assigned tasks or field operations logged for today. High risk of paying daily wages for unperformed labor.`,
           status: "PENDING"
         });
       }
 
-      // 2. UNRECORDED LABOR: Worker has active tasks in database, but is marked Absent
-      if (isAbsent && workerTasks.length > 0) {
+      // 2. UNRECORDED LABOR: Worker marked Absent, but has a task assigned today
+      if (isAbsent && hasTaskToday) {
         const wage = parseFloat(w.daily_wage || 500);
         detected.push({
           id: `ANOM-UNPAID-${w.id}`,
           type: "UNPAID",
           title: "Unrecorded Active Labor / Unpaid Work",
-          subtitle: `Worker has active field tasks but marked Absent`,
-          badgeLabel: `${workerTasks.length} Active Tasks`,
+          subtitle: `Worker assigned to field tasks today but marked Absent`,
+          badgeLabel: "Active Today Task",
           affectedWorkers: [w],
           dateString: todayDisplayStr,
           riskConfidence: 94,
           wageRisk: wage,
           riskColor: "#1565C0",
           riskDisplay: `Underpayment Risk: ₹${Math.round(wage)}`,
-          explanation: `${w.name} has ${workerTasks.length} active farm task(s) logged in the database, but attendance is recorded as Absent. High risk of wage disputes and unpaid worker labor.`,
+          explanation: `${w.name} has field tasks assigned today, but attendance was marked as Absent. High risk of wage disputes and unpaid worker labor.`,
           status: "PENDING"
         });
       }
     });
 
-    // Fallback: If presentWorkerIds was not explicitly set yet, flag workers who have 0 tasks in database
-    if (detected.length === 0) {
-      STATE.workers.forEach(w => {
-        const wIdStr = String(w.id);
-        const workerTasks = (STATE.tasks || []).filter(t => String(t.worker?.id || t.worker || '') === wIdStr);
-        if (workerTasks.length === 0) {
-          const wage = parseFloat(w.daily_wage || 500);
-          detected.push({
-            id: `ANOM-GHOST-${w.id}`,
-            type: "GHOST",
-            title: "Ghost Worker / Zero Task Output",
-            subtitle: `Worker on roster with zero field tasks logged`,
-            badgeLabel: "0 Tasks Logged",
-            affectedWorkers: [w],
-            dateString: todayDisplayStr,
-            riskConfidence: 82,
-            wageRisk: wage,
-            riskColor: "#E65100",
-            riskDisplay: `Wage Leakage Risk: ₹${Math.round(wage)}`,
-            explanation: `${w.name} has active attendance records in the database, but 0 assigned tasks or field operations have been recorded.`,
-            status: "PENDING"
-          });
-        }
-      });
-    }
-
     anomState.anomalies = detected;
     anomState.isAuditing = false;
     anomState.auditCompleted = true;
+    anomState.selectedFilter = 'ALL';
     if (typeof showToast === 'function') {
       showToast("AI Labor & Attendance Audit Completed! 🔍");
     }
@@ -169,7 +168,7 @@ async function runAnomalyAudit() {
 function renderAIAttendanceAnomaly(el) {
   const pendingCount = anomState.anomalies.length;
   const wageRiskTotal = anomState.anomalies.reduce((s, a) => s + a.wageRisk, 0);
-  const totalChecked = Math.max(10, STATE.workers.length * 2);
+  const totalChecked = Math.max(STATE.workers.length, 1);
   const cleanPercent = Math.min(100, Math.max(0, Math.round(((totalChecked - anomState.anomalies.length) / totalChecked) * 100)));
 
   const filtered = anomState.anomalies.filter(a => {
@@ -188,7 +187,7 @@ function renderAIAttendanceAnomaly(el) {
           <span class="top-bar-title" style="font-size:16px">AI Attendance & Labor Anomaly</span>
           <span style="background:#E8F5E9;color:#2E7D32;font-size:10px;font-weight:700;padding:2px 6px;border-radius:6px">Active</span>
         </div>
-        <span class="top-bar-subtitle">Cross-Domain Attendance vs. Tasks Integrity</span>
+        <span class="top-bar-subtitle">Cross-Domain Attendance vs. Daily Tasks Integrity</span>
       </div>
     </div>
 

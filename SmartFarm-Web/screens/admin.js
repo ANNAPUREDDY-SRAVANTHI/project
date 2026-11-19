@@ -305,7 +305,13 @@ function renderAdminTasks(el) {
       async (overlay) => {
         const desc = overlay.querySelector('#taskInput').value.trim();
         if (!desc) return;
-        await API.addTask({ worker: workerId, description: desc });
+        const today = typeof todayISO === 'function' ? todayISO() : new Date().toISOString().split('T')[0];
+        await API.addTask({ worker: workerId, description: desc, date: today });
+        try {
+          const todayTasks = JSON.parse(localStorage.getItem('smartfarm_today_tasks') || '{}');
+          todayTasks[workerId] = { desc, date: today, timestamp: Date.now() };
+          localStorage.setItem('smartfarm_today_tasks', JSON.stringify(todayTasks));
+        } catch(e) {}
         overlay.remove(); await refreshAll(); showToast('Task Assigned! ✅'); renderAdminTasks(el);
       });
   };
