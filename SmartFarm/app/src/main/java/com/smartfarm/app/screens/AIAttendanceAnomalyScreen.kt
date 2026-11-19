@@ -345,34 +345,7 @@ fun AIAttendanceAnomalyScreen(navController: NavController, viewModel: WorkerVie
 
                                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                         Text("Over-claim Risk: ₹${anomaly.estimatedWageRisk.toInt()}", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color(0xFFD32F2F))
-                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            if (anomaly.status != "FROZEN" && anomaly.status != "RESOLVED") {
-                                                Button(
-                                                    onClick = {
-                                                        anomaly.status = "FROZEN"
-                                                        Toast.makeText(context, "Payout Frozen for ${anomaly.affectedWorkers.firstOrNull()?.name}!", Toast.LENGTH_SHORT).show()
-                                                    },
-                                                    shape = RoundedCornerShape(8.dp),
-                                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F)),
-                                                    modifier = Modifier.height(34.dp),
-                                                    contentPadding = PaddingValues(horizontal = 10.dp)
-                                                ) {
-                                                    Text("Freeze Payout", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                                }
-                                            }
-                                            Button(
-                                                onClick = {
-                                                    anomaly.status = "RESOLVED"
-                                                    Toast.makeText(context, "Duplicate entry verified and cleared.", Toast.LENGTH_SHORT).show()
-                                                },
-                                                shape = RoundedCornerShape(8.dp),
-                                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
-                                                modifier = Modifier.height(34.dp),
-                                                contentPadding = PaddingValues(horizontal = 10.dp)
-                                            ) {
-                                                Text(if (anomaly.status == "RESOLVED") "Resolved ✓" else "Verify & Clear", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                            }
-                                        }
+                                        Text(anomaly.dateString.ifEmpty { "Today" }, fontSize = 11.sp, color = Color.Gray, fontWeight = FontWeight.Medium)
                                     }
                                 }
                             }
@@ -414,18 +387,7 @@ fun AIAttendanceAnomalyScreen(navController: NavController, viewModel: WorkerVie
 
                                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                         Text("Risk Confidence: ${anomaly.riskConfidence}%", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color(0xFFE65100))
-                                        Button(
-                                            onClick = {
-                                                anomaly.status = "RESOLVED"
-                                                Toast.makeText(context, "Ghost worker status verified.", Toast.LENGTH_SHORT).show()
-                                            },
-                                            shape = RoundedCornerShape(8.dp),
-                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
-                                            modifier = Modifier.height(34.dp),
-                                            contentPadding = PaddingValues(horizontal = 10.dp)
-                                        ) {
-                                            Text(if (anomaly.status == "RESOLVED") "Resolved ✓" else "Verify & Clear", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                        }
+                                        Text(anomaly.dateString.ifEmpty { "Recent Shifts" }, fontSize = 11.sp, color = Color.Gray, fontWeight = FontWeight.Medium)
                                     }
                                 }
                             }

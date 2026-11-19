@@ -280,21 +280,12 @@ function renderAnomalyCard(item) {
       </div>
 
       <div style="display:flex;justify-content:space-between;align-items:center">
-        <span style="font-size:12px;font-weight:800;color:#D32F2F">
+        <span style="font-size:12px;font-weight:800;color:${isDup ? '#D32F2F' : '#E65100'}">
           ${isDup ? `Over-claim Risk: ₹${Math.round(item.wageRisk)}` : `Risk Confidence: ${item.riskConfidence}%`}
         </span>
-        <div style="display:flex;gap:8px">
-          ${isDup ? `
-            <button onclick="handleAnomalyAction('${item.id}', 'FROZEN')"
-              style="padding:6px 12px;background:${item.status === 'FROZEN' ? '#FFEBEE' : '#D32F2F'};color:${item.status === 'FROZEN' ? '#D32F2F' : '#fff'};border:none;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer">
-              ${item.status === 'FROZEN' ? 'Frozen 🔒' : 'Freeze Payout'}
-            </button>
-          ` : ''}
-          <button onclick="handleAnomalyAction('${item.id}', 'RESOLVED')"
-            style="padding:6px 12px;background:${item.status === 'RESOLVED' ? '#E8F5E9' : '#2E7D32'};color:${item.status === 'RESOLVED' ? '#2E7D32' : '#fff'};border:none;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer">
-            ${item.status === 'RESOLVED' ? 'Resolved ✓' : 'Verify & Clear'}
-          </button>
-        </div>
+        <span style="font-size:11px;color:var(--gray-text);font-weight:600">
+          ${item.dateString || 'Today'}
+        </span>
       </div>
     </div>
   `;
